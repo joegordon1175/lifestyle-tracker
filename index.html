@@ -2,231 +2,70 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
-  <title>Lifestyle Block Tracker</title>
-  <link rel="stylesheet" href="styles.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#4f46e5" />
+  <meta name="description" content="Snap a receipt and the expense records itself. A fast, offline expense tracker for personal, business, property, travel or farm spending." />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Snap" />
+  <title>Snap · Expense Tracker</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+  <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
 
-  <!-- ── HEADER ── -->
-  <header>
-    <h1>🌿 Block Tracker</h1>
-    <div id="header-balance" class="header-balance">Loading…</div>
-  </header>
-
-  <!-- ── NAV ── -->
-  <nav>
-    <button class="nav-btn active" data-page="dashboard">📊 Summary</button>
-    <button class="nav-btn" data-page="add">➕ Add</button>
-    <button class="nav-btn" data-page="list">📋 Records</button>
-    <button class="nav-btn" data-page="calendar">📅 Calendar</button>
-  </nav>
-
-  <!-- ══════════════════════════════════════════════ -->
-  <!-- PAGE: DASHBOARD                                -->
-  <!-- ══════════════════════════════════════════════ -->
-  <main id="page-dashboard" class="page active">
-    <div class="period-selector">
-      <label>Period:</label>
-      <select id="summary-period">
-        <option value="month">This Month</option>
-        <option value="quarter">This Quarter</option>
-        <option value="year">This Year</option>
-        <option value="all">All Time</option>
-      </select>
-    </div>
-
-    <div class="summary-cards">
-      <div class="card income-card">
-        <div class="card-label">Income</div>
-        <div class="card-amount" id="sum-income">$0.00</div>
-      </div>
-      <div class="card expense-card">
-        <div class="card-label">Expenses</div>
-        <div class="card-amount" id="sum-expenses">$0.00</div>
-      </div>
-      <div class="card balance-card">
-        <div class="card-label">Balance</div>
-        <div class="card-amount" id="sum-balance">$0.00</div>
-      </div>
-      <div class="card lease-card">
-        <div class="card-label">Lease Paid</div>
-        <div class="card-amount" id="sum-lease">$0.00</div>
-      </div>
-    </div>
-
-    <h2 class="section-title">By Category</h2>
-    <div id="category-breakdown"></div>
-
-    <h2 class="section-title">Upcoming (30 days)</h2>
-    <div id="upcoming-list"></div>
-  </main>
-
-  <!-- ══════════════════════════════════════════════ -->
-  <!-- PAGE: ADD TRANSACTION                          -->
-  <!-- ══════════════════════════════════════════════ -->
-  <main id="page-add" class="page">
-    <h2 class="section-title" id="add-page-title">Add Transaction</h2>
-
-    <!-- Photo capture -->
-    <div class="photo-zone" id="photo-zone">
-      <label for="photo-input" id="photo-label">
-        <div class="camera-icon">📷</div>
-        <div>Tap to photograph receipt / invoice</div>
-        <div class="photo-hint">Camera or Gallery</div>
-      </label>
-      <input type="file" id="photo-input" accept="image/*" capture="environment" />
-      <img id="photo-preview" class="hidden" alt="Receipt preview" />
-      <button id="photo-clear" class="btn-ghost hidden">✕ Remove photo</button>
-    </div>
-
-    <form id="transaction-form">
-      <input type="hidden" id="edit-id" />
-
-      <div class="form-row two-col">
-        <label class="radio-card">
-          <input type="radio" name="type" value="expense" checked />
-          <span>💸 Expense</span>
-        </label>
-        <label class="radio-card">
-          <input type="radio" name="type" value="income" />
-          <span>💰 Income</span>
-        </label>
-      </div>
-
-      <div class="form-group">
-        <label>Amount ($)</label>
-        <input type="number" id="f-amount" step="0.01" min="0" placeholder="0.00" required />
-      </div>
-
-      <div class="form-group">
-        <label>Category</label>
-        <select id="f-category" required>
-          <optgroup label="Expenses">
-            <option value="Lease Payment">Lease Payment</option>
-            <option value="Feed & Supplements">Feed & Supplements</option>
-            <option value="Veterinary">Veterinary</option>
-            <option value="Fencing">Fencing</option>
-            <option value="Equipment">Equipment</option>
-            <option value="Fuel">Fuel</option>
-            <option value="Electricity">Electricity</option>
-            <option value="Water / Irrigation">Water / Irrigation</option>
-            <option value="Seeds & Plants">Seeds & Plants</option>
-            <option value="Fertiliser & Sprays">Fertiliser & Sprays</option>
-            <option value="Insurance">Insurance</option>
-            <option value="Rates">Rates</option>
-            <option value="Repairs & Maintenance">Repairs & Maintenance</option>
-            <option value="Labour">Labour</option>
-            <option value="Other Expense">Other Expense</option>
-          </optgroup>
-          <optgroup label="Income">
-            <option value="Livestock Sales">Livestock Sales</option>
-            <option value="Produce Sales">Produce Sales</option>
-            <option value="Rental Income">Rental Income</option>
-            <option value="Grant / Subsidy">Grant / Subsidy</option>
-            <option value="Other Income">Other Income</option>
-          </optgroup>
-        </select>
-      </div>
-
-      <div class="form-group">
-        <label>Description</label>
-        <input type="text" id="f-desc" placeholder="e.g. Hay bales from Smith's" />
-      </div>
-
-      <div class="form-group">
-        <label>Date</label>
-        <input type="date" id="f-date" required />
-      </div>
-
-      <div class="form-group">
-        <label>Supplier / Payee</label>
-        <input type="text" id="f-payee" placeholder="e.g. Rural Supplies Ltd" />
-      </div>
-
-      <div class="form-group">
-        <label>Invoice / Reference #</label>
-        <input type="text" id="f-ref" placeholder="INV-1234" />
-      </div>
-
-      <div class="form-group toggle-row">
-        <label>Recurring payment?</label>
-        <input type="checkbox" id="f-recurring" class="toggle" />
-      </div>
-
-      <div id="recurring-fields" class="hidden">
-        <div class="form-group">
-          <label>Repeat</label>
-          <select id="f-recur-freq">
-            <option value="monthly">Monthly</option>
-            <option value="quarterly">Quarterly</option>
-            <option value="annually">Annually</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Next due date</label>
-          <input type="date" id="f-recur-next" />
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label>Notes</label>
-        <textarea id="f-notes" rows="2" placeholder="Any extra details…"></textarea>
-      </div>
-
-      <div class="form-row two-col">
-        <button type="button" id="btn-cancel" class="btn btn-secondary hidden">Cancel</button>
-        <button type="submit" class="btn btn-primary" id="btn-save">Save Transaction</button>
-      </div>
-    </form>
-  </main>
-
-  <!-- ══════════════════════════════════════════════ -->
-  <!-- PAGE: RECORDS LIST                             -->
-  <!-- ══════════════════════════════════════════════ -->
-  <main id="page-list" class="page">
-    <div class="list-controls">
-      <input type="text" id="search-box" placeholder="🔍 Search…" />
-      <select id="filter-type">
-        <option value="">All types</option>
-        <option value="income">Income</option>
-        <option value="expense">Expense</option>
-      </select>
-      <select id="filter-cat">
-        <option value="">All categories</option>
-      </select>
-    </div>
-    <div id="records-list"></div>
-  </main>
-
-  <!-- ══════════════════════════════════════════════ -->
-  <!-- PAGE: CALENDAR                                 -->
-  <!-- ══════════════════════════════════════════════ -->
-  <main id="page-calendar" class="page">
-    <div class="cal-nav">
-      <button id="cal-prev">‹</button>
-      <span id="cal-title"></span>
-      <button id="cal-next">›</button>
-    </div>
-    <div id="cal-grid" class="cal-grid"></div>
-    <div id="cal-day-detail" class="cal-day-detail hidden"></div>
-  </main>
-
-  <!-- ══════════════════════════════════════════════ -->
-  <!-- MODAL: RECORD DETAIL                          -->
-  <!-- ══════════════════════════════════════════════ -->
-  <div id="detail-modal" class="modal hidden">
-    <div class="modal-backdrop"></div>
-    <div class="modal-box">
-      <button class="modal-close">✕</button>
-      <div id="modal-content"></div>
-      <div class="modal-actions">
-        <button class="btn btn-secondary" id="modal-edit">✏️ Edit</button>
-        <button class="btn btn-danger" id="modal-delete">🗑 Delete</button>
-      </div>
-    </div>
+  <!-- Splash while IndexedDB opens; removed by app.js -->
+  <div id="boot" class="boot">
+    <div class="boot-mark">📸</div>
+    <div class="boot-text">Snap</div>
   </div>
 
-  <script src="app.js"></script>
+  <header class="app-bar" hidden>
+    <button class="ws-switch" id="ws-switch" type="button" aria-label="Switch workspace">
+      <span class="ws-icon" id="ws-icon">🏠</span>
+      <span class="ws-meta">
+        <span class="ws-name" id="ws-name">Personal</span>
+        <span class="ws-sub" id="ws-sub">This month</span>
+      </span>
+      <span class="ws-chev" aria-hidden="true">▾</span>
+    </button>
+    <button class="icon-btn" id="btn-settings" type="button" aria-label="Settings">⚙️</button>
+  </header>
+
+  <main id="view" class="view" hidden></main>
+
+  <nav class="tabbar" id="tabbar" hidden>
+    <button class="tab" data-tab="home" aria-label="Home">
+      <span class="tab-icon">🏠</span><span class="tab-label">Home</span>
+    </button>
+    <button class="tab" data-tab="records" aria-label="Records">
+      <span class="tab-icon">🧾</span><span class="tab-label">Records</span>
+    </button>
+    <div class="tab-fab-slot">
+      <button class="fab" id="fab-scan" type="button" aria-label="Scan a receipt">
+        <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
+          <path fill="currentColor" d="M9 3 7.2 5H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.2L15 3H9Zm3 5.5A4.5 4.5 0 1 1 7.5 13 4.5 4.5 0 0 1 12 8.5Zm0 2A2.5 2.5 0 1 0 14.5 13 2.5 2.5 0 0 0 12 10.5Z"/>
+        </svg>
+      </button>
+    </div>
+    <button class="tab" data-tab="insights" aria-label="Insights">
+      <span class="tab-icon">📈</span><span class="tab-label">Insights</span>
+    </button>
+    <button class="tab" data-tab="more" aria-label="More">
+      <span class="tab-icon">⋯</span><span class="tab-label">More</span>
+    </button>
+  </nav>
+
+  <!-- One shared file input drives camera, gallery and file picking -->
+  <input type="file" id="file-input" accept="image/*,application/pdf,.csv,text/csv" hidden />
+  <input type="file" id="camera-input" accept="image/*" capture="environment" hidden />
+  <input type="file" id="restore-input" accept="application/json,.json" hidden />
+
+  <div id="sheet-host"></div>
+  <div id="toast-host" class="toast-host"></div>
+
+  <script type="module" src="./js/app.js"></script>
 </body>
 </html>
