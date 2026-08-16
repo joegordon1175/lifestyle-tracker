@@ -5,7 +5,9 @@ import {
 } from '../util.js';
 import {
   activeWorkspace, categoriesFor, saveRecord, saveFile, deleteRecord, getFileURL, state,
+  recordFileIds,
 } from '../store.js';
+import { saveReceiptPdf } from '../export.js';
 
 /**
  * The single editor used for everything that writes a record: manual entry,
@@ -15,7 +17,7 @@ import {
 export function openEditor({
   record = null,
   draft = null,
-  blob = null,
+  blobs = null,
   fileType = 'image',
   confidence = null,
   title,
@@ -38,7 +40,7 @@ export function openEditor({
     tax: src.tax ?? '',
     notes: src.notes || '',
     recurring: src.recurring || null,
-    fileId: record?.fileId || null,
+    fileIds: recordFileIds(record),
   };
 
   // Make sure the category exists in this workspace, otherwise fall back.
@@ -180,16 +182,19 @@ export function openEditor({
   // ── Photo preview ──
   const slot = $('.photo-slot', body);
   (async () => {
-    let url = null;
-    if (blob) url = URL.createObjectURL(blob);
-    else if (model.fileId) url = await getFileURL(model.fileId);
-    if (!url) return;
+    const urls = blobs?.length
+      ? blobs.map(b => URL.createObjectURL(b))
+      : (await Promise.all(model.fileIds.map(getFileURL))).filter(Boolean);
+    if (!urls.length) return;
     slot.innerHTML = `<div class="review-photo">
-      <img src="${url}" alt="Attached receipt" />
-      <button type="button" class="expand">View full</button>
+      <img src="${urls[0]}" alt="Attached receipt" />
+      <button type="button" class="expand">${urls.length > 1 ? `View all ${urls.length} pages` : 'View full'}</button>
     </div>`;
     $('.expand', slot).addEventListener('click', () => {
-      openSheet({ title: 'Receipt', body: `<img class="detail-img" src="${url}" alt="Attached receipt" />` });
+      openSheet({
+        title: urls.length > 1 ? `Receipt · ${urls.length} pages` : 'Receipt',
+        body: urls.map(u => `<img class="detail-img" src="${u}" alt="Attached receipt" />`).join(''),
+      });
     });
   })();
 
@@ -247,10 +252,10 @@ export function openEditor({
     const btn = $('#btn-save', body);
     btn.disabled = true;
 
-    let fileId = model.fileId;
-    if (blob) {
-      try { fileId = await saveFile(blob, 'receipt'); }
-      catch { toast('Saved, but the image could not be stored'); }
+    let fileIds = model.fileIds;
+    if (blobs?.length) {
+      try { fileIds = await Promise.all(blobs.map(b => saveFile(b, 'receipt'))); }
+      catch { toast('Saved, but the receipt image could not be stored'); }
     }
 
     const recurOn = recurBox.checked;
@@ -268,9 +273,9 @@ export function openEditor({
       tax: $('#f-tax', body).value ? parseFloat($('#f-tax', body).value) : null,
       notes: $('#f-notes', body).value.trim(),
       recurring: recurOn ? { freq: $('#f-recur-freq', body).value, next: $('#f-recur-next', body).value || null } : null,
-      fileId,
-      fileType: blob ? fileType : record?.fileType || null,
-      source: record?.source || (blob ? 'scan' : 'manual'),
+      fileIds,
+      fileType: blobs?.length ? fileType : record?.fileType || null,
+      source: record?.source || (blobs?.length ? 'scan' : 'manual'),
       confidence,
       createdAt: record?.createdAt,
     });
@@ -315,6 +320,7 @@ export async function openDetail(id, { onChange } = {}) {
   const rec = state.records.find(r => r.id === id);
   if (!rec) return;
   const ws = activeWorkspace();
+  const fileIds = recordFileIds(rec);
 
   const rows = [
     ['Category', rec.category],
@@ -337,6 +343,7 @@ export async function openDetail(id, { onChange } = {}) {
     <dl class="detail-list">
       ${rows.map(([k, v]) => `<div class="detail-item"><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}
     </dl>
+    ${fileIds.length ? '<button class="btn btn-outline btn-sm" id="d-pdf" type="button" style="margin-top:16px">⬇︎ Save receipt as PDF</button>' : ''}
     <div class="sheet-actions">
       <button class="btn btn-ghost" id="d-del" type="button">Delete</button>
       <button class="btn btn-primary" id="d-edit" type="button">Edit</button>
@@ -345,11 +352,11 @@ export async function openDetail(id, { onChange } = {}) {
 
   const sheet = openSheet({ title: rec.merchant || rec.category, body });
 
-  if (rec.fileId) {
-    const url = await getFileURL(rec.fileId);
-    if (url) {
-      $('.photo-slot', body).innerHTML = `<img class="detail-img" src="${url}" alt="Attached receipt" />`;
-    }
+  if (fileIds.length) {
+    const urls = (await Promise.all(fileIds.map(getFileURL))).filter(Boolean);
+    $('.photo-slot', body).innerHTML = urls
+      .map(u => `<img class="detail-img" src="${u}" alt="Attached receipt" />`).join('');
+    $('#d-pdf', body).addEventListener('click', () => saveReceiptPdf(rec));
   }
 
   $('#d-edit', body).addEventListener('click', () => {

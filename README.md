@@ -39,6 +39,7 @@ rather than a cage.
 
 - **Photo** — camera or gallery. Read on-device with OCR.
 - **PDF invoice** — the text layer is read directly; scanned PDFs fall back to OCR.
+  Each page is kept as an image so the invoice exports like any other receipt.
 - **CSV bank statement** — columns are detected automatically (date / amount, or
   separate debit and credit columns, with or without a header row) and each
   transaction is categorised from its description.
@@ -49,9 +50,21 @@ Duplicates are flagged before they are saved.
 
 ## Getting things out
 
-- CSV export of a workspace, for a spreadsheet or an accountant.
-- JSON backup of every workspace. Receipt images stay on the device — the backup
-  carries the records only, so it stays small enough to email.
+- **Receipts as PDF** — one document holding a copy of every receipt, each on its
+  own page with the date, shop, amount and tax printed above the image, behind a
+  summary index that cross-references page numbers. Pick a period (month, quarter,
+  year or everything) and it becomes the thing you hand to an accountant. Any
+  single record can also be saved on its own from its detail sheet.
+- **CSV export** of a workspace, for a spreadsheet.
+- **JSON backup** of every workspace. This carries the records only — receipt
+  images come out through the PDF export above, which keeps the backup small
+  enough to email.
+
+Receipts are stored as JPEG rather than PDF: it is roughly half the size for the
+same page, and the PDF is generated on demand so it can carry the transaction
+details alongside each image. The PDF writer is built in (`js/pdf.js`) with no
+dependencies — JPEGs are embedded byte-for-byte via DCTDecode, so exporting is
+lossless and works offline.
 
 ## What is in the box
 
@@ -103,6 +116,9 @@ js/
   presets.js        workspace presets and their category packs
   extract.js        image prep, OCR, PDF text, receipt parsing
   csv.js            statement import, CSV export
+  pdf.js            dependency-free PDF writer (Helvetica text + JPEG embedding)
+  receipts.js       receipt-pack layout: index page plus one page per receipt
+  export.js         delivering generated files (download, or share on mobile)
   util.js           formatting, sheets, toasts
   views/            home, records, insights, more, form, capture, shared
 ```

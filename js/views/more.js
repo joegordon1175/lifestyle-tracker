@@ -8,12 +8,17 @@ import {
 } from '../store.js';
 import { PRESETS, ACCENTS } from '../presets.js';
 import { toCSV, downloadBlob } from '../csv.js';
+import { saveReceiptPack } from '../export.js';
+import { recordFileIds } from '../store.js';
+import { PERIODS, inPeriod, periodLabel } from './shared.js';
 
 const CURRENCIES = ['NZD', 'AUD', 'USD', 'GBP', 'EUR', 'CAD', 'SGD', 'JPY', 'INR', 'ZAR', 'CHF', 'HKD', 'THB', 'PHP'];
 
 export function renderMore() {
   const ws = activeWorkspace();
-  const count = workspaceRecords().length;
+  const records = workspaceRecords();
+  const count = records.length;
+  const withReceipts = records.filter(r => recordFileIds(r).length).length;
   const theme = state.settings.theme;
 
   // Wrapped so wireMore() can bind to an element that is replaced on every
@@ -53,6 +58,11 @@ export function renderMore() {
 
     <div class="section-head"><span class="section-title">Your data</span></div>
     <div class="card"><div class="rows">
+      <button class="row" data-act="receipts" type="button">
+        <div class="row-icon">🧾</div>
+        <div class="row-body"><div class="row-title">Export receipts as PDF</div>
+          <div class="row-sub">${withReceipts} receipt${withReceipts === 1 ? '' : 's'} — one page each, with the details</div></div>
+      </button>
       <button class="row" data-act="export-csv" type="button">
         <div class="row-icon">📊</div>
         <div class="row-body"><div class="row-title">Export to CSV</div>
@@ -61,7 +71,7 @@ export function renderMore() {
       <button class="row" data-act="backup" type="button">
         <div class="row-icon">💾</div>
         <div class="row-body"><div class="row-title">Back up everything</div>
-          <div class="row-sub">All workspaces to a single file</div></div>
+          <div class="row-sub">Records only — receipt images export as a PDF above</div></div>
       </button>
       <button class="row" data-act="restore" type="button">
         <div class="row-icon">📥</div>
@@ -142,6 +152,7 @@ export function wireMore(container, { rerender, refreshChrome }) {
     if (act === 'new-ws') openWorkspaceSheet({ onDone: () => { refreshChrome(); rerender(); } });
     if (act === 'edit-ws') openWorkspaceSheet({ ws: activeWorkspace(), onDone: () => { refreshChrome(); rerender(); } });
     if (act === 'categories') openCategorySheet({ onDone: rerender });
+    if (act === 'receipts') openReceiptExport();
     if (act === 'export-csv') doExportCSV();
     if (act === 'backup') doBackup();
     if (act === 'restore') document.getElementById('restore-input').click();
@@ -345,6 +356,78 @@ function openCategorySheet({ onDone }) {
     draw();
   });
 
+  draw();
+}
+
+// ── Receipt pack ────────────────────────────────────────────
+function openReceiptExport() {
+  let period = 'year';
+  const all = workspaceRecords();
+
+  const body = h('<div></div>');
+  const sheet = openSheet({ title: 'Export receipts', body });
+
+  const countFor = key => {
+    const rows = key === 'all' ? all : inPeriod(all, key);
+    return {
+      rows,
+      receipts: rows.filter(r => recordFileIds(r).length).length,
+      missing: rows.filter(r => !recordFileIds(r).length).length,
+    };
+  };
+
+  function draw() {
+    const { receipts, missing } = countFor(period);
+    body.innerHTML = `
+      <p class="sheet-text">One PDF holding a copy of every receipt, each on its
+        own page with the date, shop, amount and tax printed above it, behind a
+        summary index.</p>
+
+      <div class="field" style="margin-top:16px">
+        <span class="field-label">Period</span>
+        <div class="segmented" id="r-period">
+          ${PERIODS.map(p => `<button type="button" data-period="${p.key}" aria-selected="${p.key === period}">${p.label}</button>`).join('')}
+        </div>
+      </div>
+
+      <div class="hero" style="margin-top:4px">
+        <div class="hero-label">${esc(periodLabel(period))}</div>
+        <div class="hero-amount" style="font-size:2rem">${receipts}</div>
+        <div class="hero-stat-label">receipt${receipts === 1 ? '' : 's'} to export${missing ? ` · ${missing} record${missing === 1 ? '' : 's'} with no image` : ''}</div>
+      </div>
+
+      <div class="sheet-actions">
+        <button class="btn btn-ghost" id="r-cancel" type="button">Cancel</button>
+        <button class="btn btn-primary" id="r-go" type="button" ${receipts ? '' : 'disabled'}>Export PDF</button>
+      </div>`;
+
+    $('#r-period', body).addEventListener('click', e => {
+      const b = e.target.closest('[data-period]');
+      if (!b) return;
+      period = b.dataset.period;
+      haptic();
+      draw();
+    });
+    $('#r-cancel', body).addEventListener('click', sheet.close);
+    $('#r-go', body).addEventListener('click', async () => {
+      const btn = $('#r-go', body);
+      btn.disabled = true;
+      btn.textContent = 'Building…';
+      const { rows } = countFor(period);
+      try {
+        await saveReceiptPack(rows, {
+          periodLabel: periodLabel(period),
+          onProgress: ({ done, total }) => { btn.textContent = `Building… ${done}/${total}`; },
+        });
+        sheet.close();
+      } catch (err) {
+        console.error(err);
+        toast('Could not build the PDF', { tone: 'danger' });
+        btn.disabled = false;
+        btn.textContent = 'Export PDF';
+      }
+    });
+  }
   draw();
 }
 

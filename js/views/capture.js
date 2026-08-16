@@ -48,7 +48,7 @@ export async function handleFile(file, { onDone } = {}) {
         ref: result.ref,
         tax: result.tax,
       },
-      blob: result.blob,
+      blobs: result.blobs,
       fileType: result.fileType,
       confidence: result.confidence,
       title: result.amount ? 'Check and save' : 'Almost there',
@@ -66,7 +66,7 @@ export async function handleFile(file, { onDone } = {}) {
     const offline = !navigator.onLine;
     openEditor({
       draft: { type: 'expense' },
-      blob: file.type.startsWith('image/') ? file : null,
+      blobs: file.type.startsWith('image/') ? [file] : null,
       title: 'Add it manually',
       onDone,
     });

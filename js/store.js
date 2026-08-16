@@ -127,9 +127,10 @@ async function migrateOrSeed() {
       if (old.photo && typeof old.photo === 'string' && old.photo.startsWith('data:')) {
         try {
           const blob = await (await fetch(old.photo)).blob();
-          rec.fileId = uid();
+          const fid = uid();
+          rec.fileIds = [fid];
           rec.fileType = 'image';
-          await put('files', { id: rec.fileId, blob, name: 'receipt.jpg' });
+          await put('files', { id: fid, blob, name: 'receipt.jpg' });
         } catch { /* photo is not critical — keep the record */ }
       }
       state.records.push(rec);
@@ -242,6 +243,21 @@ export async function removeCategory(type, name) {
 }
 
 // ── Records ─────────────────────────────────────────────────
+
+/**
+ * Attachments are a list of page images. Records written before multi-page
+ * support carry a single `fileId`, so read through both shapes.
+ */
+export function recordFileIds(r) {
+  if (!r) return [];
+  if (Array.isArray(r.fileIds)) return r.fileIds.filter(Boolean);
+  return r.fileId ? [r.fileId] : [];
+}
+function normaliseFileIds(r) {
+  const ids = Array.isArray(r.fileIds) ? r.fileIds : (r.fileId ? [r.fileId] : []);
+  return ids.filter(Boolean);
+}
+
 export function normaliseRecord(r) {
   return {
     id: r.id || uid(),
@@ -258,7 +274,7 @@ export function normaliseRecord(r) {
     notes: r.notes || '',
     tags: r.tags || [],
     recurring: r.recurring || null,
-    fileId: r.fileId || null,
+    fileIds: normaliseFileIds(r),
     fileType: r.fileType || null,
     source: r.source || 'manual',
     confidence: r.confidence || null,
@@ -286,7 +302,7 @@ export async function saveRecord(input) {
 
 export async function deleteRecord(id) {
   const rec = state.records.find(r => r.id === id);
-  if (rec?.fileId) await del('files', rec.fileId).catch(() => {});
+  for (const fid of recordFileIds(rec)) await del('files', fid).catch(() => {});
   state.records = state.records.filter(r => r.id !== id);
   await del('records', id);
 }
@@ -316,7 +332,7 @@ export async function exportBackup() {
     exportedAt: new Date().toISOString(),
     workspaces: state.workspaces,
     settings: state.settings,
-    records: state.records.map(({ fileId, ...r }) => r), // images stay on-device
+    records: state.records.map(({ fileIds, fileId, ...r }) => r), // images export separately as a receipt pack
   };
 }
 
@@ -340,7 +356,7 @@ export async function importBackup(data, { replace = false } = {}) {
   let added = 0;
   for (const r of data.records) {
     if (state.records.some(x => x.id === r.id)) continue;
-    const rec = normaliseRecord({ ...r, ws: idMap.get(r.ws) || state.workspaces[0].id, fileId: null });
+    const rec = normaliseRecord({ ...r, ws: idMap.get(r.ws) || state.workspaces[0].id, fileIds: [] });
     state.records.push(rec);
     await put('records', rec);
     added++;

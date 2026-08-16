@@ -1,7 +1,7 @@
 'use strict';
 
 import { esc, fmtMoney, fmtDayLabel, relativeDays, today, monthKey } from '../util.js';
-import { categoryIcon, activeWorkspace } from '../store.js';
+import { categoryIcon, activeWorkspace, recordFileIds } from '../store.js';
 
 /** One transaction row. Used on Home, Records and the calendar day list. */
 export function recordRow(r, ws = activeWorkspace()) {
@@ -11,7 +11,7 @@ export function recordRow(r, ws = activeWorkspace()) {
     <div class="row-icon ${income ? 'in' : 'out'}">${esc(categoryIcon(r.category, ws))}</div>
     <div class="row-body">
       <div class="row-title">${esc(sub)}</div>
-      <div class="row-sub">${esc(r.category)}${r.fileId ? '<span class="chip-mini">📎</span>' : ''}${r.recurring ? '<span class="chip-mini">🔁</span>' : ''}</div>
+      <div class="row-sub">${esc(r.category)}${recordFileIds(r).length ? '<span class="chip-mini">📎</span>' : ''}${r.recurring ? '<span class="chip-mini">🔁</span>' : ''}</div>
     </div>
     <div class="row-end">
       <div class="row-amount ${income ? 'in' : 'out'}">${income ? '+' : '−'}${esc(fmtMoney(r.amount, r.currency))}</div>

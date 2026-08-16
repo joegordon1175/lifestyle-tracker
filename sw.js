@@ -1,7 +1,7 @@
 /* Service worker: the app shell works offline; the OCR engine is cached the
    first time it is fetched so later scans work without a connection. */
 
-const VERSION = 'v2';
+const VERSION = 'v3';
 const SHELL = `shell-${VERSION}`;
 const VENDOR = `vendor-${VERSION}`;
 
@@ -16,6 +16,9 @@ const SHELL_FILES = [
   './js/presets.js',
   './js/extract.js',
   './js/csv.js',
+  './js/pdf.js',
+  './js/receipts.js',
+  './js/export.js',
   './js/views/home.js',
   './js/views/records.js',
   './js/views/insights.js',

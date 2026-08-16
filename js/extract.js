@@ -179,17 +179,32 @@ async function pdfText(file, onProgress) {
       .join('\n') + '\n';
   }
 
-  // Scanned PDF with no text layer — render page 1 and OCR it instead.
-  if (text.replace(/\s/g, '').length < 24) {
-    const page = await doc.getPage(1);
-    const viewport = page.getViewport({ scale: 2 });
-    const canvas = document.createElement('canvas');
-    canvas.width = viewport.width; canvas.height = viewport.height;
-    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
-    const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
-    return { text: await ocrImage(blob, onProgress), preview: blob };
+  // Render each page to a JPEG. Keeping page images rather than the original
+  // PDF makes every record exportable the same way a photographed receipt is,
+  // and lets the app show a preview without loading a PDF viewer.
+  const renders = [];
+  for (let i = 1; i <= pages; i++) {
+    renders.push(await renderPdfPage(doc, i));
   }
-  return { text, preview: null };
+
+  // Scanned PDF with no text layer — OCR the first rendered page instead.
+  if (text.replace(/\s/g, '').length < 24) {
+    text = await ocrImage(renders[0], onProgress);
+  }
+  return { text, pageImages: renders };
+}
+
+async function renderPdfPage(doc, pageNumber, scale = 2) {
+  const page = await doc.getPage(pageNumber);
+  const viewport = page.getViewport({ scale });
+  const canvas = document.createElement('canvas');
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';                    // PDFs render on transparent by default
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  return new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.85));
 }
 
 // ── Parsing ─────────────────────────────────────────────────
@@ -460,23 +475,22 @@ export function parseReceiptText(text, { dateOrder = 'dmy', categories = [] } = 
  */
 export async function extractFromFile(file, { dateOrder = 'dmy', categories = [], onProgress } = {}) {
   const isPDF = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
-  let text = '', storeBlob = null, fileType = 'image';
+  let text = '', blobs = [], fileType = 'image';
 
   if (isPDF) {
     fileType = 'pdf';
     const res = await pdfText(file, onProgress);
     text = res.text;
-    storeBlob = res.preview || file;
-    if (res.preview) fileType = 'image';
+    blobs = res.pageImages.filter(Boolean);
   } else {
     onProgress?.({ stage: 'prep', pct: 0, label: 'Preparing the image…' });
-    storeBlob = await prepareImage(file);
-    text = await ocrImage(storeBlob, onProgress);
+    blobs = [await prepareImage(file)];
+    text = await ocrImage(blobs[0], onProgress);
   }
 
   onProgress?.({ stage: 'parse', pct: 100, label: 'Pulling out the details…' });
   const parsed = parseReceiptText(text, { dateOrder, categories });
-  return { ...parsed, blob: storeBlob, fileType };
+  return { ...parsed, blobs, fileType };
 }
 
 export async function releaseOCR() {
