@@ -262,7 +262,24 @@ button { cursor: pointer; background: none; border: none; }
   transition: transform .12s var(--ease), background .15s;
 }
 .scan-btn.primary { background: #fff; color: var(--accent); border-color: #fff; }
+.scan-btn.icon-only { flex: 0 0 52px; font-size: 1.05rem; }
 .scan-btn:active { transform: scale(.97); }
+
+/* ── Paste target ────────────────────────────────────────── */
+.paste-target {
+  min-height: 128px; padding: 16px;
+  border: 2px dashed var(--border-2); border-radius: var(--r);
+  background: var(--surface-2); color: var(--text);
+  font-size: 16px; line-height: 1.4;
+  display: flex; align-items: center; justify-content: center;
+  text-align: center; overflow: hidden;
+  -webkit-user-select: text; user-select: text;
+}
+.paste-target:empty::before {
+  content: 'Paste here'; color: var(--text-3); font-weight: 600;
+}
+.paste-target:focus { outline: none; border-color: var(--accent); background: var(--surface); }
+.paste-target img { max-width: 100%; max-height: 200px; border-radius: 8px; }
 
 /* ── Cards & rows ────────────────────────────────────────── */
 .card {

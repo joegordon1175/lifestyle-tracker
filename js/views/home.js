@@ -28,6 +28,7 @@ export function renderHome({ period }) {
       <div class="scan-actions">
         <button class="scan-btn primary" data-act="camera" type="button">📷 Take photo</button>
         <button class="scan-btn" data-act="file" type="button">📁 Upload</button>
+        <button class="scan-btn icon-only" data-act="paste" type="button" aria-label="Paste from clipboard" title="Paste from clipboard">📋</button>
       </div>
     </section>
 

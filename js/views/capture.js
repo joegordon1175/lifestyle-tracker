@@ -5,6 +5,7 @@ import { activeWorkspace, categoriesFor, state, saveRecord } from '../store.js';
 import { extractFromFile } from '../extract.js';
 import { parseCSV, detectColumns, rowsToRecords } from '../csv.js';
 import { openEditor } from './form.js';
+import { pasteReceipt } from '../clipboard.js';
 
 /**
  * The whole point of the app: hand it a file, get a record.
@@ -230,6 +231,13 @@ export function openCaptureMenu({ onDone, inputs }) {
           <div class="row-sub">Photo, PDF invoice, or a CSV bank statement</div>
         </div>
       </button>
+      <button class="row" data-act="paste" type="button">
+        <div class="row-icon">📋</div>
+        <div class="row-body">
+          <div class="row-title">Paste from clipboard</div>
+          <div class="row-sub">Copied out of an email or a screenshot</div>
+        </div>
+      </button>
       <button class="row" data-act="manual" type="button">
         <div class="row-icon">✏️</div>
         <div class="row-body">
@@ -245,8 +253,18 @@ export function openCaptureMenu({ onDone, inputs }) {
   body.addEventListener('click', e => {
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (!act) return;
-    sheet.close();
     haptic();
+
+    // Reading the clipboard must start inside this gesture, so kick it off
+    // before closing the sheet rather than after an animation delay.
+    if (act === 'paste') {
+      const paste = pasteReceipt({ onFile: file => handleFile(file, { onDone }) });
+      sheet.close();
+      paste.catch(() => {});
+      return;
+    }
+
+    sheet.close();
     if (act === 'camera') inputs.camera.click();
     else if (act === 'file') inputs.file.click();
     else setTimeout(() => openEditor({ onDone }), 220);

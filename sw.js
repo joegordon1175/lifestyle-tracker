@@ -1,9 +1,11 @@
 /* Service worker: the app shell works offline; the OCR engine is cached the
    first time it is fetched so later scans work without a connection. */
 
-const VERSION = 'v3';
+const VERSION = 'v4';
 const SHELL = `shell-${VERSION}`;
 const VENDOR = `vendor-${VERSION}`;
+const INBOX = 'shared-inbox';        // holds a file handed over by the share sheet
+const INBOX_KEY = './__shared-file';
 
 const SHELL_FILES = [
   './',
@@ -16,6 +18,7 @@ const SHELL_FILES = [
   './js/presets.js',
   './js/extract.js',
   './js/csv.js',
+  './js/clipboard.js',
   './js/pdf.js',
   './js/receipts.js',
   './js/export.js',
@@ -42,15 +45,42 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.filter(k => k !== SHELL && k !== VENDOR).map(k => caches.delete(k)));
+    // INBOX is excluded: it may be holding a file a share is mid-way through
+    // handing over, and it is not versioned content.
+    await Promise.all(keys
+      .filter(k => k !== SHELL && k !== VENDOR && k !== INBOX)
+      .map(k => caches.delete(k)));
     await self.clients.claim();
   })());
 });
 
 self.addEventListener('fetch', event => {
   const { request } = event;
-  if (request.method !== 'GET') return;
   const url = new URL(request.url);
+
+  // Android share sheet: the OS POSTs the shared file here. Stash it and bounce
+  // into the app, which picks it up on boot — a POST cannot render the page.
+  if (request.method === 'POST' && url.pathname.endsWith('/share-target')) {
+    event.respondWith((async () => {
+      try {
+        const form = await request.formData();
+        const file = form.get('file');
+        if (file && file.size) {
+          const cache = await caches.open(INBOX);
+          await cache.put(INBOX_KEY, new Response(file, {
+            headers: {
+              'content-type': file.type || 'application/octet-stream',
+              'x-filename': encodeURIComponent(file.name || 'shared'),
+            },
+          }));
+        }
+      } catch { /* fall through to the app either way */ }
+      return Response.redirect(new URL('./?shared=1', self.location).href, 303);
+    })());
+    return;
+  }
+
+  if (request.method !== 'GET') return;
 
   // Tesseract / pdf.js / language data — cache-first, they are versioned URLs.
   if (url.origin !== self.location.origin) {

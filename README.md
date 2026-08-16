@@ -43,7 +43,13 @@ rather than a cage.
 - **CSV bank statement** — columns are detected automatically (date / amount, or
   separate debit and credit columns, with or without a header row) and each
   transaction is categorised from its description.
-- **Paste or drag** an image onto the window.
+- **Paste from the clipboard** — copy a receipt out of an email and paste it in,
+  from the capture menu, the 📋 button on the home card, or Ctrl/Cmd+V anywhere.
+  Where a browser will not hand the clipboard over programmatically (iOS is
+  fussy), a paste box opens instead so a long-press → Paste still works.
+- **Share to the app** — on Android, the app appears in the system share sheet,
+  so a mail attachment can go straight in. Desktop Chrome can "Open with" it too.
+- **Drag** a file onto the window.
 - **Type it in** when there is no receipt.
 
 Duplicates are flagged before they are saved.
@@ -108,7 +114,8 @@ will not work.
 ```
 index.html          app shell
 styles.css          design tokens, light/dark, all components
-sw.js               offline cache for the shell and the OCR engine
+sw.js               offline cache for the shell and the OCR engine; also
+                    receives shared files from the Android share sheet
 manifest.webmanifest
 js/
   app.js            boot, routing, global events
@@ -116,6 +123,7 @@ js/
   presets.js        workspace presets and their category packs
   extract.js        image prep, OCR, PDF text, receipt parsing
   csv.js            statement import, CSV export
+  clipboard.js      clipboard reads, with a manual paste-box fallback
   pdf.js            dependency-free PDF writer (Helvetica text + JPEG embedding)
   receipts.js       receipt-pack layout: index page plus one page per receipt
   export.js         delivering generated files (download, or share on mobile)

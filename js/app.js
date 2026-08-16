@@ -8,6 +8,7 @@ import { renderInsights } from './views/insights.js';
 import { renderMore, wireMore, openWorkspaceSheet, openWorkspaceSwitcher, doRestore } from './views/more.js';
 import { openDetail } from './views/form.js';
 import { handleFile, openCaptureMenu } from './views/capture.js';
+import { fileFromPasteEvent, pasteReceipt } from './clipboard.js';
 import { periodLabel } from './views/shared.js';
 import { toCSV, downloadBlob } from './csv.js';
 
@@ -97,6 +98,11 @@ view.addEventListener('click', e => {
   const act = t.closest('[data-act]')?.dataset.act;
   if (act === 'camera') { haptic(); inputs.camera.click(); return; }
   if (act === 'file') { haptic(); inputs.file.click(); return; }
+  if (act === 'paste') {
+    haptic();
+    pasteReceipt({ onFile: f => handleFile(f, { onDone: afterChange }) }).catch(() => {});
+    return;
+  }
 
   const goto = t.closest('[data-goto]')?.dataset.goto;
   if (goto) { goTab(goto); return; }
@@ -175,7 +181,26 @@ inputs.restore.addEventListener('change', function () {
   if (file) doRestore(file, { onDone: () => { refreshChrome(); render(); } });
 });
 
-// Shared-to-app files (Android share sheet via the manifest share_target).
+/**
+ * A file handed over by the Android share sheet is left in a cache by the
+ * service worker, because the share arrives as a POST that cannot render the
+ * app itself. Collect it once, then tidy the URL.
+ */
+async function collectSharedFile() {
+  if (!new URLSearchParams(location.search).has('shared')) return;
+  history.replaceState({}, '', './');
+  try {
+    const cache = await caches.open('shared-inbox');
+    const res = await cache.match('./__shared-file');
+    if (!res) return;
+    await cache.delete('./__shared-file');
+    const blob = await res.blob();
+    const name = decodeURIComponent(res.headers.get('x-filename') || 'shared');
+    handleFile(new File([blob], name, { type: blob.type }), { onDone: afterChange });
+  } catch { /* nothing shared, or caches unavailable */ }
+}
+
+// Files opened with the app (desktop "Open with", Chrome file handlers).
 if ('launchQueue' in window) {
   window.launchQueue.setConsumer(async launchParams => {
     if (!launchParams.files?.length) return;
@@ -184,12 +209,14 @@ if ('launchQueue' in window) {
   });
 }
 
-// Paste a screenshot straight in (handy on desktop).
-document.addEventListener('paste', e => {
-  const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
-  if (!item) return;
-  const file = item.getAsFile();
-  if (file) handleFile(file, { onDone: afterChange });
+// Ctrl/Cmd+V anywhere drops a copied receipt straight in. Ignored while the
+// user is typing into a field, and silent when the clipboard holds only text.
+document.addEventListener('paste', async e => {
+  if (e.target.closest('input, textarea, [contenteditable]')) return;
+  const file = await fileFromPasteEvent(e);
+  if (!file) return;
+  e.preventDefault();
+  handleFile(file, { onDone: afterChange });
 });
 
 // Drag a receipt onto the window.
@@ -239,4 +266,6 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', refreshChr
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => {});
   }
+
+  collectSharedFile();
 })();
