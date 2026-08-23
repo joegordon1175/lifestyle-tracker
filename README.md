@@ -37,7 +37,11 @@ rather than a cage.
 
 ## Getting things in
 
-- **Photo** — camera or gallery. Read on-device with OCR.
+- **Photo** — camera or gallery. The receipt's edges are found automatically and
+  the photo is flattened into a straight-on scan before reading, so a shot taken
+  at an angle comes out square. Corners can be dragged if the detection is off,
+  and there is a rotate / re-detect / whole-photo escape hatch. Turn the step off
+  in Preferences if you would rather not be interrupted.
 - **PDF invoice** — the text layer is read directly; scanned PDFs fall back to OCR.
   Each page is kept as an image so the invoice exports like any other receipt.
 - **CSV bank statement** — columns are detected automatically (date / amount, or
@@ -124,11 +128,13 @@ js/
   extract.js        image prep, OCR, PDF text, receipt parsing
   csv.js            statement import, CSV export
   clipboard.js      clipboard reads, with a manual paste-box fallback
+  scan.js           document detection, perspective warp, lighting clean-up
   pdf.js            dependency-free PDF writer (Helvetica text + JPEG embedding)
   receipts.js       receipt-pack layout: index page plus one page per receipt
   export.js         delivering generated files (download, or share on mobile)
   util.js           formatting, sheets, toasts
-  views/            home, records, insights, more, form, capture, shared
+  views/            home, records, insights, more, form, capture,
+                    cropper, shared
 ```
 
 Upgrading from the original Lifestyle Block Tracker is automatic: existing records

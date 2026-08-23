@@ -6,13 +6,14 @@ import { extractFromFile } from '../extract.js';
 import { parseCSV, detectColumns, rowsToRecords } from '../csv.js';
 import { openEditor } from './form.js';
 import { pasteReceipt } from '../clipboard.js';
+import { openCropper } from './cropper.js';
 
 /**
  * The whole point of the app: hand it a file, get a record.
  * Images and PDFs go through OCR/parsing; CSVs go through the statement
  * importer. Either way the user only confirms — they never type from scratch.
  */
-export async function handleFile(file, { onDone } = {}) {
+export async function handleFile(file, { onDone, skipCrop = false } = {}) {
   if (!file) return;
 
   const isCSV = /\.csv$/i.test(file.name || '') || file.type === 'text/csv' || file.type === 'application/vnd.ms-excel';
@@ -25,6 +26,19 @@ export async function handleFile(file, { onDone } = {}) {
   }
 
   const ws = activeWorkspace();
+
+  // Photos go through the crop step first: a flat, cropped receipt both looks
+  // like a scan and reads far better. PDFs are already flat, so they skip it.
+  const isImage = file.type.startsWith('image/') || /\.(jpe?g|png|heic|heif|webp)$/i.test(file.name || '');
+  if (isImage && state.settings.cropReceipts && !skipCrop) {
+    openCropper({
+      file,
+      onDone: cropped => handleFile(cropped, { onDone, skipCrop: true }),
+      onCancel: () => {},
+    });
+    return;
+  }
+
   const progress = openProgressSheet();
 
   try {

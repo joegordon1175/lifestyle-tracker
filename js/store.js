@@ -77,6 +77,7 @@ export async function init() {
     dateOrder: 'dmy',        // how ambiguous scanned dates like 04/03/26 are read
     theme: 'system',
     autoSaveHighConfidence: false,
+    cropReceipts: true,      // show the scanner-style crop step for photos
     onboarded: false,
   }, meta.settings || {});
 

@@ -91,6 +91,10 @@ export function renderMore() {
         <button data-theme="dark" aria-selected="${theme === 'dark'}">Dark</button>
       </div>
       <div class="switch-row" style="border-top:1px solid var(--border)">
+        <div class="switch-text"><b>Crop photos</b><small>Detect the receipt edges and flatten it, like a scanner</small></div>
+        <input type="checkbox" class="switch" id="crop-toggle" ${state.settings.cropReceipts ? 'checked' : ''} />
+      </div>
+      <div class="switch-row">
         <div class="switch-text"><b>Dates on receipts</b><small>How 04/03/26 should be read</small></div>
       </div>
       <div class="segmented" id="dateorder-seg" style="margin-bottom:14px">
@@ -126,6 +130,11 @@ export function wireMore(container, { rerender, refreshChrome }) {
     await saveSettings();
     refreshChrome();
     rerender();
+  });
+
+  $('#crop-toggle', root)?.addEventListener('change', async function () {
+    state.settings.cropReceipts = this.checked;
+    await saveSettings();
   });
 
   $('#dateorder-seg', root)?.addEventListener('click', async e => {

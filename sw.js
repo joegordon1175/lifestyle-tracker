@@ -1,7 +1,7 @@
 /* Service worker: the app shell works offline; the OCR engine is cached the
    first time it is fetched so later scans work without a connection. */
 
-const VERSION = 'v4';
+const VERSION = 'v5';
 const SHELL = `shell-${VERSION}`;
 const VENDOR = `vendor-${VERSION}`;
 const INBOX = 'shared-inbox';        // holds a file handed over by the share sheet
@@ -19,6 +19,7 @@ const SHELL_FILES = [
   './js/extract.js',
   './js/csv.js',
   './js/clipboard.js',
+  './js/scan.js',
   './js/pdf.js',
   './js/receipts.js',
   './js/export.js',
@@ -28,6 +29,7 @@ const SHELL_FILES = [
   './js/views/more.js',
   './js/views/form.js',
   './js/views/capture.js',
+  './js/views/cropper.js',
   './js/views/shared.js',
   './icons/icon.svg',
   './icons/icon-192.png',

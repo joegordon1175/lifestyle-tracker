@@ -265,6 +265,47 @@ button { cursor: pointer; background: none; border: none; }
 .scan-btn.icon-only { flex: 0 0 52px; font-size: 1.05rem; }
 .scan-btn:active { transform: scale(.97); }
 
+/* ── Cropper ─────────────────────────────────────────────── */
+.crop-frame {
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+  background: #0b0f17; border-radius: var(--r);
+  overflow: hidden; min-height: 200px;
+  touch-action: none;                 /* corner drags must not scroll the sheet */
+}
+.crop-frame img { max-width: 100%; max-height: 52dvh; display: block; }
+#crop-svg { position: absolute; touch-action: none; cursor: grab; }
+.crop-handle.active circle:last-child { r: 9; }
+
+.crop-loupe {
+  position: absolute; z-index: 3; pointer-events: none;
+  width: 104px; height: 104px; border-radius: 50%;
+  border: 3px solid #fff; box-shadow: var(--shadow-3);
+}
+.crop-busy {
+  position: absolute; inset: 0; z-index: 4;
+  display: grid; place-items: center;
+  background: rgba(8,12,20,.66); color: #fff;
+  font-size: .9rem; font-weight: 650;
+  backdrop-filter: blur(2px);
+}
+.crop-busy[hidden] { display: none; }
+
+.crop-hint {
+  font-size: .84rem; color: var(--text-2);
+  text-align: center; margin: 12px 0 4px; min-height: 2.4em;
+}
+.crop-tools { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 6px; }
+.crop-tool {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 11px 4px; border-radius: 12px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  font-size: 1.05rem; min-height: 58px;
+  transition: background .15s;
+}
+.crop-tool span { font-size: .68rem; font-weight: 650; color: var(--text-2); }
+.crop-tool:active { background: var(--sunken); }
+
 /* ── Paste target ────────────────────────────────────────── */
 .paste-target {
   min-height: 128px; padding: 16px;
