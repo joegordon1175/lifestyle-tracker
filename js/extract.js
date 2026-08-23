@@ -258,15 +258,28 @@ function moneyOnLine(line) {
   return out;
 }
 
+/**
+ * Only reports a currency the receipt genuinely states. OCR throws off stray
+ * glyphs — a single misread € on a local rates notice used to be enough to
+ * relabel the whole record — so a lone symbol is not treated as evidence.
+ * Returning null leaves the workspace's own currency in charge.
+ */
 function detectCurrency(text) {
   const upper = text.toUpperCase();
+
   for (const code of CURRENCY_CODES) {
-    if (new RegExp(`\\b${code}\\b`).test(upper)) return code;
+    const hits = (upper.match(new RegExp(`\\b${code}\\b`, 'g')) || []).length;
+    if (!hits) continue;
+    // Convincing if it sits against an amount ("EUR 24.50", "24.50 EUR")
+    // or is stated more than once.
+    const besideAmount = new RegExp(`(\\b${code}\\b[^0-9A-Z]{0,3}[0-9]|[0-9][^0-9A-Z]{0,3}\\b${code}\\b)`).test(upper);
+    if (besideAmount || hits >= 2) return code;
   }
-  if (/£/.test(text)) return 'GBP';
-  if (/€/.test(text)) return 'EUR';
-  if (/₹/.test(text)) return 'INR';
-  if (/¥/.test(text)) return 'JPY';
+
+  for (const [symbol, code] of [['£', 'GBP'], ['€', 'EUR'], ['₹', 'INR'], ['¥', 'JPY']]) {
+    const attached = (text.match(new RegExp(`${symbol}\\s?[0-9]`, 'g')) || []).length;
+    if (attached >= 2) return code;
+  }
   return null;
 }
 

@@ -75,7 +75,7 @@ export function openEditor({
     </div>
 
     <div class="field">
-      <span class="field-label">Amount ${flag('amount')}</span>
+      <span class="field-label">Amount ${flag('amount')}<span id="cur-flag"></span></span>
       <div class="amount-field">
         <span class="amount-cur" id="cur-sym"></span>
         <input id="f-amount" type="text" inputmode="decimal" placeholder="0.00"
@@ -175,6 +175,10 @@ export function openEditor({
   curSel.innerHTML = CURRENCIES.map(c => `<option value="${c}"${c === model.currency ? ' selected' : ''}>${c}</option>`).join('');
   const syncCurSymbol = () => {
     $('#cur-sym', body).textContent = fmtMoney(0, model.currency).replace(/[\d.,]/g, '').trim() || '$';
+    // A record in a different currency to its workspace is nearly always a
+    // misread, so say so here rather than let it surface in the list later.
+    $('#cur-flag', body).innerHTML = model.currency === ws.currency ? ''
+      : `<span class="auto-flag low">${esc(model.currency)}, not ${esc(ws.currency)}</span>`;
   };
   syncCurSymbol();
   curSel.addEventListener('change', () => { model.currency = curSel.value; syncCurSymbol(); });
