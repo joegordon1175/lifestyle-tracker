@@ -40,8 +40,10 @@ rather than a cage.
 - **Photo** — camera or gallery. The receipt's edges are found automatically and
   the photo is flattened into a straight-on scan before reading, so a shot taken
   at an angle comes out square. Corners can be dragged if the detection is off,
-  and there is a rotate / re-detect / whole-photo escape hatch. Turn the step off
-  in Preferences if you would rather not be interrupted.
+  and there is a rotate / re-detect / whole-photo escape hatch. The flattened
+  result is then previewed with the clean-up set to Original, Light or Strong,
+  and you can go back to the crop before committing. Turn the whole step off in
+  Preferences if you would rather not be interrupted.
 - **PDF invoice** — the text layer is read directly; scanned PDFs fall back to OCR.
   Each page is kept as an image so the invoice exports like any other receipt.
 - **CSV bank statement** — columns are detected automatically (date / amount, or

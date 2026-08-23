@@ -1,28 +1,33 @@
 'use strict';
 
-import { h, $, openSheet, toast, haptic } from '../util.js';
+import { h, $, $$, openSheet, toast, haptic } from '../util.js';
+import { state, saveSettings } from '../store.js';
 import {
   loadImage, toCanvas, detectDocument, warpToDocument, enhanceScan,
-  canvasToBlob, fullFrameCorners,
+  canvasToBlob, fullFrameCorners, CLEANUP_LEVELS, cleanupStrength,
 } from '../scan.js';
 
 /**
- * The crop step: shows the photo with the detected receipt outlined, lets the
- * corners be dragged, then flattens the selection into a clean rectangle.
+ * The scan step, in two phases inside one sheet:
  *
- * Corners are kept normalised (0..1) throughout, so they survive rotation,
- * resizing and the jump between the on-screen preview and the full-size image.
+ *   crop     — the photo with the detected receipt outlined and draggable
+ *   preview  — the flattened result, with the clean-up dialled up or down
+ *
+ * Preview can always go back to crop with the corners intact, so nothing is
+ * committed until the result has actually been seen.
  */
 
 const HANDLE_HIT = 34;        // px radius that counts as grabbing a corner
 const LOUPE = 104;            // magnifier diameter
 
-export function openCropper({ file, enhance = true, onDone, onCancel } = {}) {
+export function openCropper({ file, onDone, onCancel } = {}) {
   let bitmap = null;
   let working = null;         // full-size canvas at the current rotation
+  let warped = null;          // flattened result, cached across level changes
+  let previewCanvas = null;   // what the preview is currently showing
   let corners = fullFrameCorners();
   let rotation = 0;
-  let useEnhance = enhance;
+  let level = state.settings.scanCleanup || 'strong';
   let dragging = -1;
   let settled = false;
 
@@ -31,43 +36,59 @@ export function openCropper({ file, enhance = true, onDone, onCancel } = {}) {
       <img id="crop-img" alt="Photographed receipt" />
       <svg id="crop-svg" aria-hidden="true"></svg>
       <canvas id="crop-loupe" class="crop-loupe" width="${LOUPE}" height="${LOUPE}" hidden></canvas>
+      <img id="preview-img" class="preview-img" alt="Flattened receipt" hidden />
       <div class="crop-busy" id="crop-busy">Finding the edges…</div>
     </div>
 
-    <p class="crop-hint" id="crop-hint">Drag the corners to the edges of the receipt.</p>
-
-    <div class="crop-tools">
-      <button class="crop-tool" data-tool="rotate" type="button">↻<span>Rotate</span></button>
-      <button class="crop-tool" data-tool="auto" type="button">✨<span>Auto</span></button>
-      <button class="crop-tool" data-tool="full" type="button">⛶<span>Whole photo</span></button>
-    </div>
-
-    <div class="switch-row">
-      <div class="switch-text">
-        <b>Clean up</b>
-        <small>Flatten the lighting so the paper reads white</small>
+    <!-- crop phase -->
+    <div id="phase-crop">
+      <p class="crop-hint" id="crop-hint">Drag the corners to the edges of the receipt.</p>
+      <div class="crop-tools">
+        <button class="crop-tool" data-tool="rotate" type="button">↻<span>Rotate</span></button>
+        <button class="crop-tool" data-tool="auto" type="button">✨<span>Auto</span></button>
+        <button class="crop-tool" data-tool="full" type="button">⛶<span>Whole photo</span></button>
       </div>
-      <input type="checkbox" class="switch" id="crop-enhance" ${useEnhance ? 'checked' : ''} />
+      <div class="sheet-actions">
+        <button class="btn btn-ghost" id="crop-cancel" type="button">Cancel</button>
+        <button class="btn btn-primary" id="crop-next" type="button">Preview</button>
+      </div>
     </div>
 
-    <div class="sheet-actions">
-      <button class="btn btn-ghost" id="crop-cancel" type="button">Cancel</button>
-      <button class="btn btn-primary" id="crop-go" type="button">Use photo</button>
+    <!-- preview phase -->
+    <div id="phase-preview" hidden>
+      <p class="crop-hint">How should it be cleaned up?</p>
+      <div class="segmented" id="level-seg">
+        ${CLEANUP_LEVELS.map(l => `<button type="button" data-level="${l.key}"
+          aria-selected="${l.key === level}">${l.label}</button>`).join('')}
+      </div>
+      <p class="crop-hint" id="level-note"></p>
+      <div class="sheet-actions">
+        <button class="btn btn-ghost" id="preview-back" type="button">‹ Back to crop</button>
+        <button class="btn btn-primary" id="preview-save" type="button">Use this</button>
+      </div>
     </div>
   </div>`);
 
   const sheet = openSheet({
-    title: 'Crop the receipt',
+    title: 'Scan the receipt',
     body,
     size: 'full',
     onClose: () => { if (!settled) onCancel?.(); },
   });
 
   const img = $('#crop-img', body);
+  const previewImg = $('#preview-img', body);
   const svg = $('#crop-svg', body);
   const frame = $('#crop-frame', body);
   const loupe = $('#crop-loupe', body);
   const busy = $('#crop-busy', body);
+  const title = $('.sheet-title', sheet.el);
+
+  const LEVEL_NOTE = {
+    off: 'Exactly as photographed, just straightened.',
+    light: 'Evens out the lighting but keeps the paper as it looks.',
+    strong: 'Full scan look — white paper, dark print.',
+  };
 
   // ── Geometry between the displayed image and normalised corners ──
   let box = { left: 0, top: 0, width: 1, height: 1 };
@@ -112,8 +133,7 @@ export function openCropper({ file, enhance = true, onDone, onCancel } = {}) {
     if (!working) return;
     const c = corners[index];
     const ctx = loupe.getContext('2d');
-    const zoom = 2.6;
-    const srcSize = LOUPE / zoom * (working.width / box.width);
+    const srcSize = LOUPE / 2.6 * (working.width / box.width);
     const cx = c.x * working.width, cy = c.y * working.height;
 
     ctx.clearRect(0, 0, LOUPE, LOUPE);
@@ -133,19 +153,16 @@ export function openCropper({ file, enhance = true, onDone, onCancel } = {}) {
     ctx.restore();
 
     const p = toScreen(c);
-    // Keep the loupe on screen, and out from under the finger.
-    const left = Math.min(box.width - LOUPE, Math.max(0, p.x - LOUPE / 2)) + box.left;
-    const top = Math.max(0, p.y - LOUPE - 26) + box.top;
-    loupe.style.left = `${left}px`;
-    loupe.style.top = `${top}px`;
+    loupe.style.left = `${Math.min(box.width - LOUPE, Math.max(0, p.x - LOUPE / 2)) + box.left}px`;
+    loupe.style.top = `${Math.max(0, p.y - LOUPE - 26) + box.top}px`;
     loupe.hidden = false;
   }
 
   // ── Pointer handling ──
-  function pointAt(e) {
+  const pointAt = e => {
     const r = svg.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
-  }
+  };
 
   svg.addEventListener('pointerdown', e => {
     const p = pointAt(e);
@@ -181,7 +198,48 @@ export function openCropper({ file, enhance = true, onDone, onCancel } = {}) {
   svg.addEventListener('pointerup', endDrag);
   svg.addEventListener('pointercancel', endDrag);
 
-  new ResizeObserver(() => { measure(); draw(); }).observe(frame);
+  new ResizeObserver(() => { if (!$('#phase-crop', body).hidden) { measure(); draw(); } }).observe(frame);
+
+  // ── Phases ──
+  function showCrop() {
+    title.textContent = 'Crop the receipt';
+    $('#phase-crop', body).hidden = false;
+    $('#phase-preview', body).hidden = true;
+    previewImg.hidden = true;
+    img.hidden = false;
+    svg.style.display = '';
+    requestAnimationFrame(() => { measure(); draw(); });
+  }
+
+  async function showPreview() {
+    title.textContent = 'Check the scan';
+    $('#phase-crop', body).hidden = true;
+    $('#phase-preview', body).hidden = false;
+    img.hidden = true;
+    svg.style.display = 'none';
+    loupe.hidden = true;
+    previewImg.hidden = false;
+    await renderLevel();
+  }
+
+  /** Re-applies the chosen clean-up to the cached flattened image. */
+  async function renderLevel() {
+    busy.hidden = false;
+    busy.textContent = 'Applying…';
+    await new Promise(r => setTimeout(r, 16));
+
+    const c = document.createElement('canvas');
+    c.width = warped.width;
+    c.height = warped.height;
+    c.getContext('2d').drawImage(warped, 0, 0);
+    const strength = cleanupStrength(level);
+    if (strength > 0) enhanceScan(c, { strength });
+
+    previewCanvas = c;
+    previewImg.src = c.toDataURL('image/jpeg', 0.85);
+    $('#level-note', body).textContent = LEVEL_NOTE[level] || '';
+    busy.hidden = true;
+  }
 
   // ── Loading, rotation, detection ──
   async function rebuild({ redetect = true } = {}) {
@@ -208,6 +266,7 @@ export function openCropper({ file, enhance = true, onDone, onCancel } = {}) {
   (async () => {
     try {
       bitmap = await loadImage(file);
+      showCrop();
       await rebuild();
     } catch {
       toast('Could not open that image', { tone: 'danger' });
@@ -217,41 +276,60 @@ export function openCropper({ file, enhance = true, onDone, onCancel } = {}) {
     }
   })();
 
-  // ── Tools ──
+  // ── Controls ──
   body.addEventListener('click', async e => {
     const tool = e.target.closest('[data-tool]')?.dataset.tool;
-    if (!tool) return;
-    haptic();
-    if (tool === 'rotate') { rotation = (rotation + 90) % 360; await rebuild(); }
-    if (tool === 'auto') await rebuild();
-    if (tool === 'full') { corners = fullFrameCorners(0); draw(); }
+    if (tool) {
+      haptic();
+      if (tool === 'rotate') { rotation = (rotation + 90) % 360; await rebuild(); }
+      if (tool === 'auto') await rebuild();
+      if (tool === 'full') { corners = fullFrameCorners(0); draw(); }
+      return;
+    }
+
+    const chosen = e.target.closest('[data-level]')?.dataset.level;
+    if (chosen && chosen !== level) {
+      level = chosen;
+      haptic();
+      $$('#level-seg button', body).forEach(b => b.setAttribute('aria-selected', String(b.dataset.level === level)));
+      state.settings.scanCleanup = level;
+      saveSettings();
+      await renderLevel();
+    }
   });
 
-  $('#crop-enhance', body).addEventListener('change', function () { useEnhance = this.checked; });
   $('#crop-cancel', body).addEventListener('click', () => sheet.close());
+  $('#preview-back', body).addEventListener('click', () => { haptic(); showCrop(); });
 
-  $('#crop-go', body).addEventListener('click', async () => {
-    const btn = $('#crop-go', body);
+  $('#crop-next', body).addEventListener('click', async () => {
+    const btn = $('#crop-next', body);
     btn.disabled = true;
-    btn.textContent = 'Flattening…';
     busy.hidden = false;
     busy.textContent = 'Flattening…';
     await new Promise(r => setTimeout(r, 16));
-
     try {
-      let out = warpToDocument(working, corners);
-      if (useEnhance) out = enhanceScan(out);
-      const blob = await canvasToBlob(out);
-      settled = true;
-      sheet.close();
-      onDone(blob || file);
+      warped = warpToDocument(working, corners);
+      await showPreview();
     } catch (err) {
       console.error(err);
-      toast('Could not crop that one — using the original', { tone: 'danger' });
+      toast('Could not flatten that one — using the photo as it is', { tone: 'danger' });
       settled = true;
       sheet.close();
       onDone(file);
+    } finally {
+      btn.disabled = false;
+      busy.hidden = true;
     }
+  });
+
+  $('#preview-save', body).addEventListener('click', async () => {
+    const btn = $('#preview-save', body);
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    const blob = await canvasToBlob(previewCanvas);
+    settled = true;
+    sheet.close();
+    onDone(blob || file);
   });
 
   return sheet;

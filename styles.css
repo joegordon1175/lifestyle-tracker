@@ -112,6 +112,10 @@ body.no-scroll { overflow: hidden; }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; background: none; border: none; }
 
+/* The hidden attribute must win over any display rule a component sets,
+   otherwise `el.hidden = true` silently does nothing. */
+[hidden] { display: none !important; }
+
 ::selection { background: var(--accent-soft); }
 
 /* ── Boot splash ─────────────────────────────────────────── */
@@ -276,6 +280,10 @@ button { cursor: pointer; background: none; border: none; }
 .crop-frame img { max-width: 100%; max-height: 52dvh; display: block; }
 #crop-svg { position: absolute; touch-action: none; cursor: grab; }
 .crop-handle.active circle:last-child { r: 9; }
+.preview-img {
+  max-width: 100%; max-height: 52dvh; display: block;
+  background: #fff; border-radius: 4px;
+}
 
 .crop-loupe {
   position: absolute; z-index: 3; pointer-events: none;

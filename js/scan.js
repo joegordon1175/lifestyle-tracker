@@ -355,6 +355,9 @@ export function warpToDocument(canvas, cornersNorm, { maxEdge = OUTPUT_EDGE } = 
  * built from a heavily blurred small copy, then sampled back up.
  */
 export function enhanceScan(canvas, { strength = 1 } = {}) {
+  const mix = Math.max(0, Math.min(1, strength));
+  if (mix === 0) return canvas;
+
   const w = canvas.width, h = canvas.height;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   const img = ctx.getImageData(0, 0, w, h);
@@ -367,32 +370,58 @@ export function enhanceScan(canvas, { strength = 1 } = {}) {
   small.width = bw; small.height = bh;
   small.getContext('2d', { willReadFrequently: true }).drawImage(canvas, 0, 0, bw, bh);
   const sGrey = luminance(small.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, bw, bh));
+  const bg = boxBlur(sGrey, bw, bh, Math.max(2, Math.round(Math.max(bw, bh) / 12)));
 
-  const radius = Math.max(2, Math.round(Math.max(bw, bh) / 12));
-  const bg = boxBlur(sGrey, bw, bh, radius);
+  // Pass 1: how dark is each pixel relative to the paper right behind it?
+  // Judging ink against its local background rather than an absolute curve is
+  // what keeps faint thermal print from being flattened into the paper.
+  const RATIO_MAX = 1.2;
+  const ratios = new Float32Array(w * h);
+  const hist = new Uint32Array(256);
+  const luma = new Float32Array(w * h);
 
   for (let y = 0; y < h; y++) {
     const by = Math.min(bh - 1, (y * bh / h) | 0);
     for (let x = 0; x < w; x++) {
-      const bx = Math.min(bw - 1, (x * bw / w) | 0);
-      const local = Math.max(40, bg[by * bw + bx]);   // floor avoids blowing up shadows
-      const gain = (245 / local) * strength + (1 - strength);
-      const i = (y * w + x) * 4;
-      for (let c = 0; c < 3; c++) {
-        const v = data[i + c] * gain;
-        // Mild S-curve: lift the paper, deepen the ink, leave midtones alone.
-        data[i + c] = v <= 0 ? 0 : v >= 255 ? 255 : contrast(v);
-      }
+      const p = y * w + x;
+      const i = p * 4;
+      const l = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+      luma[p] = l;
+      const local = Math.max(40, bg[by * bw + Math.min(bw - 1, (x * bw / w) | 0)]);
+      const r = Math.min(RATIO_MAX, l / local);
+      ratios[p] = r;
+      hist[Math.max(0, Math.min(255, Math.round((r / RATIO_MAX) * 255)))]++;
     }
   }
+
+  // The darkest 2% of the page is the real ink, whatever shade it happens to
+  // be. Anchoring the black point there rescales a faded receipt without
+  // crushing one that was already high-contrast.
+  const total = w * h;
+  let acc = 0, blackPoint = 0;
+  for (let i = 0; i < 256; i++) {
+    acc += hist[i];
+    if (acc >= total * 0.02) { blackPoint = (i / 255) * RATIO_MAX; break; }
+  }
+  const lo = Math.max(0.35, Math.min(0.92, blackPoint));
+  const span = Math.max(0.08, 1 - lo);
+
+  // Pass 2: stretch that range across the full scale, keeping the colour.
+  for (let p = 0; p < total; p++) {
+    const t = Math.max(0, Math.min(1, (ratios[p] - lo) / span));
+    const target = 255 * Math.pow(t, 0.85);      // slight lift off pure black
+    const l = Math.max(1, luma[p]);
+    const gain = target / l;
+    const i = p * 4;
+    for (let c = 0; c < 3; c++) {
+      const original = data[i + c];
+      const full = Math.max(0, Math.min(255, original * gain));
+      data[i + c] = original + (full - original) * mix;
+    }
+  }
+
   ctx.putImageData(img, 0, 0);
   return canvas;
-}
-
-function contrast(v) {
-  const n = v / 255;
-  const out = n < 0.5 ? 2 * n * n : 1 - 2 * (1 - n) * (1 - n);
-  return Math.max(0, Math.min(255, (n * 0.35 + out * 0.65) * 255));
 }
 
 /** Separable box blur over a greyscale plane. */
@@ -422,18 +451,28 @@ function boxBlur(src, w, h, r) {
   return out;
 }
 
+/** Clean-up levels offered in the preview, and what they mean numerically. */
+export const CLEANUP_LEVELS = [
+  { key: 'off', label: 'Original', strength: 0 },
+  { key: 'light', label: 'Light', strength: 0.5 },
+  { key: 'strong', label: 'Strong', strength: 1 },
+];
+export function cleanupStrength(key) {
+  return (CLEANUP_LEVELS.find(l => l.key === key) || CLEANUP_LEVELS[2]).strength;
+}
+
 export function canvasToBlob(canvas, quality = 0.85) {
   return new Promise(res => canvas.toBlob(res, 'image/jpeg', quality));
 }
 
 /** One-shot: photo in, flattened and cleaned receipt out. */
-export async function autoScan(file, { enhance = true } = {}) {
+export async function autoScan(file, { strength = 1 } = {}) {
   const bitmap = await loadImage(file);
   const canvas = toCanvas(bitmap);
   bitmap.close?.();
   const { corners, confidence } = detectDocument(canvas);
   if (confidence < 0.4) return { blob: file, applied: false };
   let out = warpToDocument(canvas, corners);
-  if (enhance) out = enhanceScan(out);
+  if (strength > 0) out = enhanceScan(out, { strength });
   return { blob: await canvasToBlob(out), applied: true };
 }

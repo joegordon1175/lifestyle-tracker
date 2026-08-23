@@ -78,6 +78,7 @@ export async function init() {
     theme: 'system',
     autoSaveHighConfidence: false,
     cropReceipts: true,      // show the scanner-style crop step for photos
+    scanCleanup: 'strong',   // clean-up level last chosen in the scan preview
     onboarded: false,
   }, meta.settings || {});
 
