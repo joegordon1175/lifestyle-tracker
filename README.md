@@ -49,8 +49,9 @@ rather than a cage.
   transaction is categorised from its description.
 - **Paste from the clipboard** — copy a receipt out of an email and paste it in,
   from the capture menu, the 📋 button on the home card, or Ctrl/Cmd+V anywhere.
-  Where a browser will not hand the clipboard over programmatically (iOS is
-  fussy), a paste box opens instead so a long-press → Paste still works.
+  iOS asks permission with its own small "Paste" confirmation first; the app
+  says so rather than leaving an unexplained bubble on screen, and if that
+  prompt goes unanswered it falls back to a paste box after a few seconds.
 - **Share to the app** — on Android, the app appears in the system share sheet,
   so a mail attachment can go straight in. Desktop Chrome can "Open with" it too.
 - **Drag** a file onto the window.

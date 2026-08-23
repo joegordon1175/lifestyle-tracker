@@ -9,7 +9,7 @@ import { h, $, openSheet, toast } from './util.js';
  *  1. `navigator.clipboard.read()` — needs a user gesture and, on iOS, shows a
  *     system "Paste" confirmation. Preferred when available.
  *  2. A focused paste target the user long-presses into, which works anywhere
- *     the first route is unsupported or denied.
+ *     the first route is unsupported, denied, or left unanswered.
  */
 
 const WANTED = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'application/pdf'];
@@ -40,15 +40,27 @@ async function fileFromHtml(html) {
 /**
  * Reads the clipboard directly. Must be called synchronously from a user
  * gesture or the browser will reject it.
+ *
+ * iOS shows its own small "Paste" confirmation instead of resolving straight
+ * away, and simply ignoring that callout leaves the promise pending forever —
+ * so this races it against a timeout and reports back rather than hanging.
+ *
  * Returns { file } on success, or { reason } explaining why not.
  */
-export async function readClipboardFile() {
+export async function readClipboardFile({ timeoutMs = 7000 } = {}) {
   if (!navigator.clipboard?.read) return { reason: 'unsupported' };
 
   let items;
   try {
-    items = await navigator.clipboard.read();
+    let timer;
+    items = await Promise.race([
+      navigator.clipboard.read(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(Object.assign(new Error('timeout'), { name: 'TimeoutError' })), timeoutMs);
+      }),
+    ]).finally(() => clearTimeout(timer));
   } catch (err) {
+    if (err?.name === 'TimeoutError') return { reason: 'timeout' };
     // NotAllowedError covers both a denied permission and a dismissed prompt.
     return { reason: err?.name === 'NotAllowedError' ? 'denied' : 'failed' };
   }
@@ -93,8 +105,9 @@ export async function fileFromPasteEvent(event) {
  * Fallback for browsers that will not hand over the clipboard programmatically:
  * give the user somewhere to paste into and read the resulting paste event.
  */
-export function openPasteTarget({ onFile }) {
+export function openPasteTarget({ onFile, timedOut = false } = {}) {
   const body = h(`<div>
+    ${timedOut ? '<p class="sheet-text" style="margin-bottom:10px">No problem — paste it in here instead.</p>' : ''}
     <p class="sheet-text">Long-press the box below and choose <b>Paste</b>, or press
       ${navigator.platform?.includes('Mac') ? '⌘V' : 'Ctrl+V'} if you have a keyboard.</p>
     <div class="paste-target" id="paste-box" contenteditable="true" role="textbox"
@@ -130,13 +143,24 @@ export function openPasteTarget({ onFile }) {
  * the paste target when that is not an option.
  */
 export async function pasteReceipt({ onFile }) {
+  // If the read does not come back promptly the browser is almost certainly
+  // showing its own permission prompt, which is easy to mistake for a glitch.
+  // Say what it is rather than leaving an unexplained bubble on screen.
+  let dismissHint = null;
+  const hintTimer = setTimeout(() => {
+    dismissHint = toast('Tap “Paste” to let the app read your clipboard', { duration: 8000 });
+  }, 400);
+
   const { file, reason } = await readClipboardFile();
+  clearTimeout(hintTimer);
+  dismissHint?.();
+
   if (file) { onFile(file); return; }
 
   if (reason === 'empty') {
     toast('Nothing to paste — copy the receipt image first', { tone: 'danger' });
     return;
   }
-  // unsupported / denied / failed → let the user paste manually instead.
-  openPasteTarget({ onFile });
+  // unsupported / denied / failed / ignored prompt → paste manually instead.
+  openPasteTarget({ onFile, timedOut: reason === 'timeout' });
 }
