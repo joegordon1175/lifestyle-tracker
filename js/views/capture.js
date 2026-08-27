@@ -1,7 +1,7 @@
 'use strict';
 
 import { esc, h, $, openSheet, toast, haptic, fmtMoney } from '../util.js';
-import { activeWorkspace, categoriesFor, state, saveRecord } from '../store.js';
+import { activeWorkspace, categoriesFor, state, saveRecord, recallPayee } from '../store.js';
 import { extractFromFile } from '../extract.js';
 import { parseCSV, detectColumns, rowsToRecords } from '../csv.js';
 import { openEditor } from './form.js';
@@ -52,16 +52,27 @@ export async function handleFile(file, { onDone, skipCrop = false } = {}) {
     haptic([8, 30, 8]);
 
     const duplicate = findDuplicate(result, ws.id);
+
+    // If this supplier has been confirmed before, use the name and category
+    // the user settled on rather than whatever the letterhead reads as today.
+    const known = recallPayee(ws.id, { detected: result.merchant, text: result.text });
+
     openEditor({
       draft: {
         type: 'expense',
         amount: result.amount ?? '',
         currency: result.currency || ws.currency,
-        category: result.category,
-        merchant: result.merchant,
+        category: known?.category || result.category,
+        merchant: known?.merchant || result.merchant,
         date: result.date,
         ref: result.ref,
         tax: result.tax,
+      },
+      detectedMerchant: result.merchant,
+      scanText: result.text,
+      learned: {
+        merchant: !!known?.merchant,
+        category: !!known?.category,
       },
       blobs: result.blobs,
       fileType: result.fileType,

@@ -5,7 +5,7 @@ import {
 } from '../util.js';
 import {
   activeWorkspace, categoriesFor, saveRecord, saveFile, deleteRecord, getFileURL, state,
-  recordFileIds,
+  recordFileIds, rememberPayee, payeeNames,
 } from '../store.js';
 import { saveReceiptPdf } from '../export.js';
 
@@ -20,6 +20,9 @@ export function openEditor({
   blobs = null,
   fileType = 'image',
   confidence = null,
+  learned = {},
+  detectedMerchant = '',
+  scanText = '',
   title,
   onDone,
 } = {}) {
@@ -52,6 +55,7 @@ export function openEditor({
 
   const conf = confidence || {};
   const flag = (key) => {
+    if (learned[key]) return '<span class="auto-flag">remembered</span>';
     if (!conf[key] && conf[key] !== 0) return '';
     if (conf[key] >= 0.7) return '<span class="auto-flag">auto</span>';
     if (conf[key] > 0) return '<span class="auto-flag low">check</span>';
@@ -97,7 +101,10 @@ export function openEditor({
       <div class="field">
         <label for="f-merchant">Who ${flag('merchant')}</label>
         <input class="input" id="f-merchant" type="text" placeholder="Shop or payer"
-               value="${esc(model.merchant)}" autocomplete="off" />
+               value="${esc(model.merchant)}" autocomplete="off" list="payee-list" />
+        <datalist id="payee-list">
+          ${payeeNames(ws.id).map(n => `<option value="${esc(n)}"></option>`).join('')}
+        </datalist>
       </div>
     </div>
 
@@ -282,6 +289,15 @@ export function openEditor({
       source: record?.source || (blobs?.length ? 'scan' : 'manual'),
       confidence,
       createdAt: record?.createdAt,
+    });
+
+    // Learn what this supplier is called, so the next scan of the same
+    // letterhead arrives already filled in the way the user wants it.
+    await rememberPayee(ws.id, {
+      detected: detectedMerchant,
+      merchant: rec.merchant,
+      category: rec.category,
+      text: scanText,
     });
 
     haptic([10, 40, 14]);

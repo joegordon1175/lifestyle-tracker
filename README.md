@@ -61,6 +61,13 @@ rather than a cage.
 
 Duplicates are flagged before they are saved.
 
+**Suppliers are remembered.** Whatever you call a shop when you confirm a scan is
+what the next scan of the same letterhead arrives with, category included, marked
+"remembered" so you can see it was not read off the page. Because the same
+letterhead rarely OCRs the same way twice, each supplier also keeps a few
+distinctive words from the page and is matched on those when the name itself does
+not line up. Names already used are offered as you type.
+
 ## Getting things out
 
 - **Receipts as PDF** — one document holding a copy of every receipt, each on its

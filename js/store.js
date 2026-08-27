@@ -19,6 +19,7 @@ export const state = {
   records: [],      // all records, all workspaces
   workspaces: [],
   settings: {},
+  payees: {},       // wsId → { key: { merchant, category, count } }
 };
 
 function open() {
@@ -72,6 +73,7 @@ export async function init() {
   const meta = Object.fromEntries(metaRows.map(r => [r.key, r.value]));
 
   state.workspaces = meta.workspaces || [];
+  state.payees = meta.payees || {};
   state.settings = Object.assign({
     activeWs: null,
     dateOrder: 'dmy',        // how ambiguous scanned dates like 04/03/26 are read
@@ -209,6 +211,8 @@ export async function deleteWorkspace(id) {
   const doomed = state.records.filter(r => r.ws === id);
   for (const r of doomed) await deleteRecord(r.id);
   state.workspaces = state.workspaces.filter(w => w.id !== id);
+  delete state.payees[id];
+  await put('meta', { key: 'payees', value: state.payees });
   if (!state.workspaces.length) state.workspaces = [makeWorkspace({ name: 'Personal', preset: 'personal' })];
   if (state.settings.activeWs === id) state.settings.activeWs = state.workspaces[0].id;
   await saveWorkspaces();
@@ -311,6 +315,114 @@ export async function deleteRecord(id) {
 
 export function getRecord(id) { return state.records.find(r => r.id === id); }
 
+// ── Remembered payees ───────────────────────────────────────
+/**
+ * What the user calls a supplier, learned from what they confirmed last time.
+ *
+ * Matching on the recognised name alone is not enough: the same letterhead
+ * rarely reads the same way twice — one scan of a council notice comes back as
+ * "WBOPDC" and the next as "Combined Rates/Levy Notice". So each entry also
+ * keeps a handful of distinctive words from the page, and a new scan is matched
+ * on those when the name itself does not line up.
+ */
+const PAYEE_LIMIT = 300;
+
+// Words that turn up on everyone's paperwork and so prove nothing.
+const COMMON = new Set([
+  'invoice', 'receipt', 'total', 'notice', 'account', 'number', 'statement',
+  'limited', 'payment', 'please', 'amount', 'date', 'balance', 'reference',
+  'page', 'customer', 'service', 'charge', 'charges', 'period', 'instalment',
+  'road', 'street', 'avenue', 'drive', 'lane', 'highway', 'phone', 'email',
+  'subtotal', 'change', 'card', 'eftpos', 'visa', 'mastercard', 'thank',
+  'thanks', 'copy', 'merchant', 'terminal', 'order', 'items', 'item', 'qty',
+]);
+
+export function payeeKey(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 40);
+}
+
+/** Distinctive words from the top of a receipt — the letterhead, in effect. */
+function fingerprint(text, limit = 8) {
+  const head = String(text || '').split(/\r?\n/).slice(0, 12).join(' ').toLowerCase();
+  const out = [];
+  const seen = new Set();
+  for (const raw of head.match(/[a-z][a-z0-9.&]{3,}/g) || []) {
+    const token = raw.replace(/[^a-z0-9]/g, '');
+    if (token.length < 4 || COMMON.has(token) || seen.has(token)) continue;
+    seen.add(token);
+    out.push(token);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function bookFor(wsId) {
+  const existing = state.payees[wsId];
+  if (Array.isArray(existing)) return existing;
+  return (state.payees[wsId] = []);
+}
+
+export async function rememberPayee(wsId, { detected = '', merchant = '', category = '', text = '' } = {}) {
+  const name = merchant.trim();
+  if (!name) return;
+  const book = bookFor(wsId);
+
+  const keys = [payeeKey(name), payeeKey(detected)].filter(k => k.length >= 3);
+  const tokens = fingerprint(text);
+
+  let entry = book.find(e => e.merchant.toLowerCase() === name.toLowerCase());
+  if (!entry) {
+    entry = { merchant: name, category, keys: [], tokens: [], count: 0 };
+    book.push(entry);
+  }
+  entry.merchant = name;
+  if (category) entry.category = category;
+  entry.keys = [...new Set([...entry.keys, ...keys])].slice(0, 12);
+  entry.tokens = [...new Set([...entry.tokens, ...tokens])].slice(0, 16);
+  entry.count = (entry.count || 0) + 1;
+  entry.updatedAt = new Date().toISOString();
+
+  if (book.length > PAYEE_LIMIT) {
+    book.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+    book.length = PAYEE_LIMIT;
+  }
+  await put('meta', { key: 'payees', value: state.payees });
+}
+
+export function recallPayee(wsId, { detected = '', text = '' } = {}) {
+  const book = state.payees[wsId];
+  if (!Array.isArray(book) || !book.length) return null;
+
+  const direct = payeeKey(detected);
+  if (direct.length >= 3) {
+    const hit = book.find(e => e.keys?.includes(direct));
+    if (hit) return hit;
+  }
+
+  // Otherwise weigh up the page itself. A remembered name appearing verbatim
+  // settles it; failing that, two distinctive words have to line up.
+  const hay = payeeKey(text);
+  if (!hay) return null;
+  let best = null;
+  for (const entry of book) {
+    let score = (entry.keys || []).some(k => k.length >= 6 && hay.includes(k)) ? 3 : 0;
+    for (const token of entry.tokens || []) {
+      if (token.length >= 5 && hay.includes(token)) score++;
+    }
+    if (score >= 2 && (!best || score > best.score)) best = { score, entry };
+  }
+  return best?.entry || null;
+}
+
+/** Names offered as you type, most-used first. */
+export function payeeNames(wsId = state.settings.activeWs) {
+  const book = state.payees[wsId];
+  if (!Array.isArray(book)) return [];
+  return book.slice()
+    .sort((a, b) => (b.count || 0) - (a.count || 0) || a.merchant.localeCompare(b.merchant))
+    .map(e => e.merchant);
+}
+
 // ── Files ───────────────────────────────────────────────────
 export async function saveFile(blob, name = 'receipt') {
   const id = uid();
@@ -334,6 +446,7 @@ export async function exportBackup() {
     exportedAt: new Date().toISOString(),
     workspaces: state.workspaces,
     settings: state.settings,
+    payees: state.payees,
     records: state.records.map(({ fileIds, fileId, ...r }) => r), // images export separately as a receipt pack
   };
 }
@@ -346,6 +459,13 @@ export async function importBackup(data, { replace = false } = {}) {
     for (const r of [...state.records]) await deleteRecord(r.id);
     state.workspaces = [];
   }
+  if (data.payees && typeof data.payees === 'object') {
+    for (const [wsId, book] of Object.entries(data.payees)) {
+      state.payees[wsId] = Object.assign(state.payees[wsId] || {}, book);
+    }
+    await put('meta', { key: 'payees', value: state.payees });
+  }
+
   const idMap = new Map();
   for (const ws of data.workspaces) {
     const existing = state.workspaces.find(w => w.id === ws.id);
