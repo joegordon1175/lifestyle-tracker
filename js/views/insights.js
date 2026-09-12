@@ -1,8 +1,12 @@
 'use strict';
 
-import { esc, fmtMoney, fmtMonth } from '../util.js';
+import { esc, h, fmtMoney, fmtMonth, openSheet, haptic } from '../util.js';
 import { activeWorkspace, workspaceRecords, categoryIcon } from '../store.js';
-import { PERIODS, inPeriod, totals, byCategory, monthSeries, emptyState, periodLabel, periodRange } from './shared.js';
+import { openDetail } from './form.js';
+import {
+  PERIODS, inPeriod, totals, byCategory, monthSeries, emptyState, periodLabel, periodRange,
+  groupedRecords,
+} from './shared.js';
 
 export function renderInsights({ period }) {
   const ws = activeWorkspace();
@@ -78,27 +82,27 @@ export function renderInsights({ period }) {
     ${expCats.length ? `
       <div class="section-head"><span class="section-title">Spending by category</span></div>
       <div class="card"><div class="rows">
-        ${expCats.map(([name, amt]) => catRow(name, amt, expMax, t.expense, ws, 'out')).join('')}
+        ${expCats.map(([name, amt]) => catRow(name, amt, expMax, t.expense, ws, 'out', 'expense')).join('')}
       </div></div>` : ''}
 
     ${incCats.length ? `
       <div class="section-head"><span class="section-title">Income by category</span></div>
       <div class="card"><div class="rows">
-        ${incCats.map(([name, amt]) => catRow(name, amt, incMax, t.income, ws, 'in')).join('')}
+        ${incCats.map(([name, amt]) => catRow(name, amt, incMax, t.income, ws, 'in', 'income')).join('')}
       </div></div>` : ''}
 
     ${topMerchants.length ? `
       <div class="section-head"><span class="section-title">Most spent with</span></div>
       <div class="card"><div class="rows">
         ${topMerchants.map(([name, v]) => `
-          <div class="row">
+          <button class="row" type="button" data-drill="who" data-drill-value="${esc(name)}">
             <div class="row-icon">🏬</div>
             <div class="row-body">
               <div class="row-title">${esc(name)}</div>
               <div class="row-sub">${v.count} visit${v.count === 1 ? '' : 's'}</div>
             </div>
             <div class="row-end"><div class="row-amount out">${esc(fmtMoney(v.total, ws.currency))}</div></div>
-          </div>`).join('')}
+          </button>`).join('')}
       </div></div>` : ''}
 
     <button class="btn btn-outline" id="btn-export" type="button" style="margin-top:20px">⬇︎ Export ${rows.length} record${rows.length === 1 ? '' : 's'} as CSV</button>
@@ -110,8 +114,9 @@ function bar(value, peak) {
   return value > 0 ? `${Math.max(2, (value / peak) * 100)}%` : '0';
 }
 
-function catRow(name, amt, max, total, ws, tone) {
-  return `<div class="cat-row">
+function catRow(name, amt, max, total, ws, tone, type) {
+  return `<button class="cat-row" type="button" data-drill="cat"
+      data-drill-value="${esc(name)}" data-drill-type="${esc(type)}">
     <div class="cat-line">
       <span class="cat-emoji">${esc(categoryIcon(name, ws))}</span>
       <span class="cat-name">${esc(name)}</span>
@@ -119,7 +124,7 @@ function catRow(name, amt, max, total, ws, tone) {
       <span class="cat-pct">${Math.round((amt / (total || 1)) * 100)}%</span>
     </div>
     <div class="bar"><i class="${tone}" style="width:${Math.max(3, (amt / max) * 100)}%"></i></div>
-  </div>`;
+  </button>`;
 }
 
 /**
@@ -137,3 +142,69 @@ function elapsedDays(period, rows) {
   const from = new Date(periodRange(period).from + 'T00:00');
   return Math.max(1, Math.round((t - from) / 86400000) + 1);
 }
+
+/** Records drawn in the breakdown sheet before it offers to show more. */
+const PAGE = 40;
+
+/**
+ * The transactions behind a bar or a supplier row. Opened by tapping either,
+ * and it keeps the period you were looking at so the total in here matches the
+ * number you tapped — with the option to widen it without leaving the sheet.
+ */
+export function openBreakdown({ kind, value, type = 'expense', period = 'month', onChange } = {}) {
+  const ws = activeWorkspace();
+  let showing = period;
+  let shown = PAGE;
+
+  const matches = () => inPeriod(workspaceRecords(), showing)
+    .filter(r => (kind === 'cat'
+      ? r.category === value && r.type === type
+      : r.type === 'expense' && (r.merchant || '').trim() === value))
+    .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+
+  const body = h('<div></div>');
+  const sheet = openSheet({ title: value, body });
+
+  function draw() {
+    const rows = matches();
+    const sum = rows.reduce((acc, r) => acc + r.amount, 0);
+    body.innerHTML = `
+      <div class="segmented" id="d-period" role="tablist" style="margin-top:0">
+        ${PERIODS.map(p => `<button role="tab" type="button" data-dp="${p.key}" aria-selected="${p.key === showing}">${p.label}</button>`).join('')}
+      </div>
+
+      ${rows.length ? `
+        <div class="day-head" style="padding-top:4px">
+          <span>${rows.length} record${rows.length === 1 ? '' : 's'} · ${esc(periodLabel(showing).toLowerCase())}</span>
+          <span class="day-total">${esc(fmtMoney(sum, ws.currency))}</span>
+        </div>
+        ${groupedRecords(rows.slice(0, shown), ws)}
+        ${rows.length > shown ? `
+          <button class="btn btn-outline" id="d-more" type="button" style="margin-top:14px">
+            Show ${Math.min(PAGE * 2, rows.length - shown)} more · ${rows.length - shown} older
+          </button>` : ''}
+      ` : emptyState({
+        icon: '🔍',
+        title: 'Nothing in this period',
+        text: `No ${kind === 'cat' ? 'records in this category' : 'spending with this supplier'} between those dates. Try a wider period.`,
+      })}`;
+  }
+
+  body.addEventListener('click', e => {
+    const dp = e.target.closest('[data-dp]')?.dataset.dp;
+    if (dp) { showing = dp; shown = PAGE; haptic(); draw(); return; }
+
+    if (e.target.closest('#d-more')) { shown += PAGE * 2; draw(); return; }
+
+    const id = e.target.closest('[data-record]')?.dataset.record;
+    if (id) {
+      openDetail(id, {
+        onChange: () => { draw(); onChange?.(); },
+      });
+    }
+  });
+
+  draw();
+  return sheet;
+}
+

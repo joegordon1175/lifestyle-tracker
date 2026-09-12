@@ -103,7 +103,8 @@ export function renderHome({ period }) {
       </div>
       <div class="card"><div class="rows">
         ${cats.map(([name, amt]) => `
-          <div class="cat-row">
+          <button class="cat-row" type="button" data-drill="cat"
+              data-drill-value="${esc(name)}" data-drill-type="expense">
             <div class="cat-line">
               <span class="cat-emoji">${esc(categoryIcon(name, ws))}</span>
               <span class="cat-name">${esc(name)}</span>
@@ -111,7 +112,7 @@ export function renderHome({ period }) {
               <span class="cat-pct">${Math.round((amt / (t.expense || 1)) * 100)}%</span>
             </div>
             <div class="bar"><i class="out" style="width:${Math.max(3, (amt / catMax) * 100)}%"></i></div>
-          </div>`).join('')}
+          </button>`).join('')}
       </div></div>` : ''}
 
     ${recent.length ? `

@@ -4,7 +4,7 @@ import { $, $$, debounce, haptic, toast, today } from './util.js';
 import { init, state, activeWorkspace, saveSettings } from './store.js';
 import { renderHome } from './views/home.js';
 import { renderRecords, PAGE } from './views/records.js';
-import { renderInsights } from './views/insights.js';
+import { renderInsights, openBreakdown } from './views/insights.js';
 import { renderMore, wireMore, openWorkspaceSheet, openWorkspaceSwitcher, doRestore, openBackupSheet } from './views/more.js';
 import { openDetail } from './views/form.js';
 import { handleFile, openCaptureMenu } from './views/capture.js';
@@ -104,6 +104,20 @@ view.addEventListener('click', e => {
   if (act === 'paste') {
     haptic();
     pasteReceipt({ onFile: f => handleFile(f, { onDone: afterChange }) }).catch(() => {});
+    return;
+  }
+
+  // A category bar or a supplier row opens the transactions behind it.
+  const drill = t.closest('[data-drill]');
+  if (drill) {
+    haptic();
+    openBreakdown({
+      kind: drill.dataset.drill,
+      value: drill.dataset.drillValue,
+      type: drill.dataset.drillType || 'expense',
+      period: ui.period,
+      onChange: afterChange,
+    });
     return;
   }
 

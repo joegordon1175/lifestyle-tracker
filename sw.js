@@ -1,7 +1,7 @@
 /* Service worker: the app shell works offline; the OCR engine is cached the
    first time it is fetched so later scans work without a connection. */
 
-const VERSION = 'v11';
+const VERSION = 'v12';
 const SHELL = `shell-${VERSION}`;
 const VENDOR = `vendor-${VERSION}`;
 const INBOX = 'shared-inbox';        // holds a file handed over by the share sheet

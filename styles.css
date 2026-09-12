@@ -395,6 +395,8 @@ button.row:active, .row.tappable:active { background: var(--surface-2); }
 
 /* ── Category bars ───────────────────────────────────────── */
 .cat-row { padding: 11px 14px; display: block; width: 100%; text-align: left; }
+button.cat-row { transition: background .12s; }
+button.cat-row:active { background: var(--sunken); }
 .cat-line { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
 .cat-emoji { font-size: 1rem; }
 .cat-name { flex: 1; font-size: .88rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -94,6 +94,8 @@ lossless and works offline.
 - Records: search, type and category filters, plus a month calendar view. Long
   histories draw a page at a time so the list stays quick to open.
 - Insights: six-month trend, full category breakdown, most-spent-with, CSV export.
+  Tap any category bar or supplier row to see the transactions behind the number,
+  with the period switchable in place; tap one to open, edit or delete it.
 - Dark mode, and an accent colour that follows the active workspace.
 - Weeks start on Monday, switchable to Sunday.
 - A quiet reminder to back up once there is enough in there to miss.
