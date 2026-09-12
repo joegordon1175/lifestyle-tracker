@@ -2,7 +2,7 @@
 
 import { esc, fmtMoney, fmtMonth } from '../util.js';
 import { activeWorkspace, workspaceRecords, categoryIcon } from '../store.js';
-import { PERIODS, inPeriod, totals, byCategory, monthSeries, emptyState, periodLabel } from './shared.js';
+import { PERIODS, inPeriod, totals, byCategory, monthSeries, emptyState, periodLabel, periodRange } from './shared.js';
 
 export function renderInsights({ period }) {
   const ws = activeWorkspace();
@@ -35,7 +35,7 @@ export function renderInsights({ period }) {
   }
   const topMerchants = [...merchants.entries()].sort((a, b) => b[1].total - a[1].total).slice(0, 5);
 
-  const days = Math.max(1, countedDays(rows));
+  const days = Math.max(1, elapsedDays(period, rows));
   const perDay = t.expense / days;
 
   return `
@@ -122,11 +122,18 @@ function catRow(name, amt, max, total, ws, tone) {
   </div>`;
 }
 
-/** Days between the first and last record in the set, capped at the period. */
-function countedDays(rows) {
-  if (!rows.length) return 1;
-  const dates = rows.map(r => r.date).sort();
-  const from = new Date(dates[0] + 'T00:00');
-  const to = new Date(dates[dates.length - 1] + 'T00:00');
-  return Math.max(1, Math.round((to - from) / 86400000) + 1);
+/**
+ * Days the period has actually covered so far — up to today for a live
+ * period, or the whole span of the records for "all time".
+ */
+function elapsedDays(period, rows) {
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  if (period === 'all') {
+    if (!rows.length) return 1;
+    const dates = rows.map(r => r.date).sort();
+    const from = new Date(dates[0] + 'T00:00');
+    return Math.max(1, Math.round((t - from) / 86400000) + 1);
+  }
+  const from = new Date(periodRange(period).from + 'T00:00');
+  return Math.max(1, Math.round((t - from) / 86400000) + 1);
 }

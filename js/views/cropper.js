@@ -30,6 +30,8 @@ export function openCropper({ file, onDone, onCancel } = {}) {
   let level = state.settings.scanCleanup || 'strong';
   let dragging = -1;
   let settled = false;
+  let observer = null;
+  const urls = [];
 
   const body = h(`<div class="cropper">
     <div class="crop-frame" id="crop-frame">
@@ -73,7 +75,11 @@ export function openCropper({ file, onDone, onCancel } = {}) {
     title: 'Scan the receipt',
     body,
     size: 'full',
-    onClose: () => { if (!settled) onCancel?.(); },
+    onClose: () => {
+      observer?.disconnect();
+      setTimeout(() => urls.forEach(u => URL.revokeObjectURL(u)), 500);
+      if (!settled) onCancel?.();
+    },
   });
 
   const img = $('#crop-img', body);
@@ -198,7 +204,14 @@ export function openCropper({ file, onDone, onCancel } = {}) {
   svg.addEventListener('pointerup', endDrag);
   svg.addEventListener('pointercancel', endDrag);
 
-  new ResizeObserver(() => { if (!$('#phase-crop', body).hidden) { measure(); draw(); } }).observe(frame);
+  observer = new ResizeObserver(() => { if (!$('#phase-crop', body).hidden) { measure(); draw(); } });
+  observer.observe(frame);
+  const blobUrl = async (canvas, quality = 0.85) => {
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', quality));
+    const url = URL.createObjectURL(blob);
+    urls.push(url);
+    return url;
+  };
 
   // ── Phases ──
   function showCrop() {
@@ -236,7 +249,7 @@ export function openCropper({ file, onDone, onCancel } = {}) {
     if (strength > 0) enhanceScan(c, { strength });
 
     previewCanvas = c;
-    previewImg.src = c.toDataURL('image/jpeg', 0.85);
+    previewImg.src = await blobUrl(c);
     $('#level-note', body).textContent = LEVEL_NOTE[level] || '';
     busy.hidden = true;
   }
@@ -246,7 +259,7 @@ export function openCropper({ file, onDone, onCancel } = {}) {
     busy.hidden = false;
     busy.textContent = 'Finding the edges…';
     working = toCanvas(bitmap, { rotation });
-    img.src = working.toDataURL('image/jpeg', 0.85);
+    img.src = await blobUrl(working);
     await new Promise(res => { img.onload = res; img.onerror = res; });
     measure();
 

@@ -53,16 +53,31 @@ function reqP(request) {
 async function getAll(storeName) {
   return reqP(tx(storeName).objectStore(storeName).getAll());
 }
+/** Resolves when the transaction commits; rejects if it aborts (e.g. storage full). */
+function committed(t, value) {
+  return new Promise((res, rej) => {
+    t.oncomplete = () => res(value);
+    t.onabort = () => rej(t.error || new Error('Storage write was aborted'));
+    t.onerror = () => rej(t.error || new Error('Storage write failed'));
+  });
+}
 async function put(storeName, value) {
   const t = tx(storeName, 'readwrite');
-  const p = reqP(t.objectStore(storeName).put(value));
-  await p;
-  return new Promise(res => { t.oncomplete = () => res(value); });
+  const done = committed(t, value);
+  t.objectStore(storeName).put(value);
+  return done;
 }
 async function del(storeName, key) {
   const t = tx(storeName, 'readwrite');
-  await reqP(t.objectStore(storeName).delete(key));
-  return new Promise(res => { t.oncomplete = res; });
+  const done = committed(t);
+  t.objectStore(storeName).delete(key);
+  return done;
+}
+
+/** True when an error means the device is out of room for the app. */
+export function isQuotaError(err) {
+  return err?.name === 'QuotaExceededError'
+    || /quota|storage.*full|not enough space/i.test(String(err?.message || err?.name || ''));
 }
 
 // ── Boot ────────────────────────────────────────────────────
@@ -276,7 +291,7 @@ export function normaliseRecord(r) {
     description: r.description || '',
     date: r.date || today(),
     ref: r.ref || '',
-    tax: r.tax == null ? null : Number(r.tax),
+    tax: Number.isFinite(Number(r.tax)) && r.tax !== '' && r.tax !== null ? Number(r.tax) : null,
     notes: r.notes || '',
     tags: r.tags || [],
     recurring: r.recurring || null,
@@ -292,12 +307,11 @@ export function normaliseRecord(r) {
 export async function saveRecord(input) {
   const rec = normaliseRecord(input);
   const idx = state.records.findIndex(r => r.id === rec.id);
+  if (idx !== -1) rec.createdAt = state.records[idx].createdAt;
+
+  await put('records', rec);            // throws on failure; memory stays honest
   if (idx === -1) state.records.push(rec);
-  else {
-    rec.createdAt = state.records[idx].createdAt;
-    state.records[idx] = rec;
-  }
-  await put('records', rec);
+  else state.records[idx] = rec;
 
   // Once a workspace holds real data it is no longer the disposable starter.
   const ws = state.workspaces.find(w => w.id === rec.ws);
@@ -460,8 +474,18 @@ export async function importBackup(data, { replace = false } = {}) {
     state.workspaces = [];
   }
   if (data.payees && typeof data.payees === 'object') {
-    for (const [wsId, book] of Object.entries(data.payees)) {
-      state.payees[wsId] = Object.assign(state.payees[wsId] || {}, book);
+    for (const [wsId, incoming] of Object.entries(data.payees)) {
+      if (!Array.isArray(incoming)) continue;           // older/unknown shape
+      const book = bookFor(wsId);
+      for (const entry of incoming) {
+        if (!entry?.merchant) continue;
+        const mine = book.find(e => e.merchant.toLowerCase() === entry.merchant.toLowerCase());
+        if (!mine) { book.push(entry); continue; }
+        mine.keys = [...new Set([...(mine.keys || []), ...(entry.keys || [])])].slice(0, 12);
+        mine.tokens = [...new Set([...(mine.tokens || []), ...(entry.tokens || [])])].slice(0, 16);
+        mine.count = Math.max(mine.count || 0, entry.count || 0);
+        if (!mine.category && entry.category) mine.category = entry.category;
+      }
     }
     await put('meta', { key: 'payees', value: state.payees });
   }

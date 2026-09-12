@@ -166,6 +166,7 @@ export function openSheet({ title, body, size = 'auto', onClose, dismissable = t
   const close = () => {
     if (closed) return;
     closed = true;
+    document.removeEventListener('keydown', onKey);
     wrap.classList.remove('in');
     setTimeout(() => {
       wrap.remove();
@@ -174,14 +175,25 @@ export function openSheet({ title, body, size = 'auto', onClose, dismissable = t
     onClose?.();
   };
 
+  // Escape closes the topmost sheet only, and the listener goes with it —
+  // it used to accumulate, so a later Escape closed every sheet at once.
+  const onKey = e => {
+    if (e.key !== 'Escape' || !dismissable) return;
+    if (host.lastElementChild !== wrap) return;
+    close();
+  };
+  document.addEventListener('keydown', onKey);
+
   if (dismissable) {
     $('.sheet-backdrop', wrap).addEventListener('click', close);
     $('.sheet-x', wrap)?.addEventListener('click', close);
-    // Swipe-down-to-dismiss on the grip / header area.
+    // Swipe-down-to-dismiss, but only from the grip or header. Starting it from
+    // anywhere in the body meant a corner drag in the cropper or a scroll of
+    // a long form could throw the whole sheet away.
     const sheet = $('.sheet', wrap);
     let startY = null, dy = 0;
     const onStart = e => {
-      if (sheet.scrollTop > 0) return;
+      if (!e.target.closest('.sheet-grip, .sheet-head')) return;
       startY = e.touches[0].clientY; dy = 0;
       sheet.style.transition = 'none';
     };
@@ -201,9 +213,6 @@ export function openSheet({ title, body, size = 'auto', onClose, dismissable = t
     sheet.addEventListener('touchmove', onMove, { passive: true });
     sheet.addEventListener('touchend', onEnd);
   }
-
-  const onKey = e => { if (e.key === 'Escape' && dismissable) { close(); document.removeEventListener('keydown', onKey); } };
-  document.addEventListener('keydown', onKey);
 
   return { el: wrap, body: bodyEl, close };
 }

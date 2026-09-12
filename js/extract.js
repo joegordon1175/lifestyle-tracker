@@ -215,7 +215,7 @@ const MONTH_NAMES = {
 };
 
 // Lines that must never be mistaken for the payable total.
-const NOT_TOTAL = /(sub\s?-?total|subtotal|total\s+(items?|qty|quantity|savings?|discount|units?)|change|cash\s+(out|tender)|rounding|balance\s+(forward|b\/f)|previous|opening|loyalty|points|gst\s+content|tax\s+content|excl)/i;
+const NOT_TOTAL = /(sub\s?-?total|subtotal|tender|total\s+(items?|qty|quantity|savings?|discount|units?)|change|cash\s+(out|tender)|rounding|balance\s+(forward|b\/f)|previous|opening|loyalty|points|gst\s+content|tax\s+content|excl)/i;
 const TOTAL_STRONG = /(grand\s*total|amount\s*(due|payable|paid)|total\s*(due|payable|to\s*pay|incl|including|inc\s*gst|amount)|balance\s*due|to\s*pay|you\s*paid|order\s*total|invoice\s*total)/i;
 const TOTAL_WEAK = /(^|\b)(total|eftpos|visa|mastercard|debit|credit|card|paid|payment|charged)(\b|$)/i;
 

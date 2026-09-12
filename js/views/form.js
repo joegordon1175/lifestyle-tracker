@@ -5,7 +5,7 @@ import {
 } from '../util.js';
 import {
   activeWorkspace, categoriesFor, saveRecord, saveFile, deleteRecord, getFileURL, state,
-  recordFileIds, rememberPayee, payeeNames,
+  recordFileIds, rememberPayee, payeeNames, isQuotaError,
 } from '../store.js';
 import { saveReceiptPdf } from '../export.js';
 
@@ -170,10 +170,12 @@ export function openEditor({
     </div>
   </form>`);
 
+  const objectUrls = [];
   const sheet = openSheet({
     title: title || (isEdit ? 'Edit record' : 'New record'),
     body,
     size: 'full',
+    onClose: () => setTimeout(() => objectUrls.forEach(u => URL.revokeObjectURL(u)), 500),
   });
 
   // ── Currency select ──
@@ -196,6 +198,7 @@ export function openEditor({
     const urls = blobs?.length
       ? blobs.map(b => URL.createObjectURL(b))
       : (await Promise.all(model.fileIds.map(getFileURL))).filter(Boolean);
+    objectUrls.push(...urls);
     if (!urls.length) return;
     slot.innerHTML = `<div class="review-photo">
       <img src="${urls[0]}" alt="Attached receipt" />
@@ -254,7 +257,7 @@ export function openEditor({
   // ── Save ──
   body.addEventListener('submit', async e => {
     e.preventDefault();
-    const amount = parseFloat(String($('#f-amount', body).value).replace(/[^\d.-]/g, ''));
+    const amount = parseAmount($('#f-amount', body).value);
     if (!Number.isFinite(amount) || amount <= 0) {
       toast('Enter an amount first', { tone: 'danger' });
       $('#f-amount', body).focus();
@@ -270,7 +273,9 @@ export function openEditor({
     }
 
     const recurOn = recurBox.checked;
-    const rec = await saveRecord({
+    let rec;
+    try {
+      rec = await saveRecord({
       id: model.id,
       ws: ws.id,
       type: model.type,
@@ -289,7 +294,15 @@ export function openEditor({
       source: record?.source || (blobs?.length ? 'scan' : 'manual'),
       confidence,
       createdAt: record?.createdAt,
-    });
+      });
+    } catch (err) {
+      console.error(err);
+      btn.disabled = false;
+      toast(isQuotaError(err)
+        ? 'This device is out of storage for the app — export a receipt PDF and delete some old records'
+        : 'Could not save that record', { tone: 'danger', duration: 7000 });
+      return;
+    }
 
     // Learn what this supplier is called, so the next scan of the same
     // letterhead arrives already filled in the way the user wants it.
@@ -333,6 +346,15 @@ export function openEditor({
   if (!isEdit && !draft) setTimeout(() => $('#f-amount', body).focus(), 320);
 
   return sheet;
+}
+
+/** "1,234.56", "1234,56" and "12,50" all mean what a person means by them. */
+function parseAmount(raw) {
+  let v = String(raw || '').trim().replace(/[^\d.,-]/g, '');
+  const lastComma = v.lastIndexOf(','), lastDot = v.lastIndexOf('.');
+  if (lastComma > lastDot) v = v.replace(/\./g, '').replace(',', '.');   // comma is the decimal
+  else v = v.replace(/,/g, '');
+  return parseFloat(v);
 }
 
 /** Read-only detail view with edit / delete actions. */

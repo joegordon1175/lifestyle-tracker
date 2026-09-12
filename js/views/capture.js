@@ -2,7 +2,7 @@
 
 import { esc, h, $, openSheet, toast, haptic, fmtMoney } from '../util.js';
 import { activeWorkspace, categoriesFor, state, saveRecord, recallPayee } from '../store.js';
-import { extractFromFile } from '../extract.js';
+import { extractFromFile, prepareImage } from '../extract.js';
 import { parseCSV, detectColumns, rowsToRecords } from '../csv.js';
 import { openEditor } from './form.js';
 import { pasteReceipt } from '../clipboard.js';
@@ -90,9 +90,15 @@ export async function handleFile(file, { onDone, skipCrop = false } = {}) {
     progress.close();
     console.error(err);
     const offline = !navigator.onLine;
+    // Attach a downscaled copy, not the raw camera file — a 12-megapixel
+    // original is several MB and would sit in storage forever.
+    let fallback = null;
+    if (file.type.startsWith('image/')) {
+      try { fallback = [await prepareImage(file)]; } catch { fallback = [file]; }
+    }
     openEditor({
       draft: { type: 'expense' },
-      blobs: file.type.startsWith('image/') ? [file] : null,
+      blobs: fallback,
       title: 'Add it manually',
       onDone,
     });

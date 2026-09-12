@@ -191,7 +191,10 @@ export function rowsToRecords(detected, {
 export function toCSV(records, { categoryIcon } = {}) {
   const head = ['Date', 'Type', 'Amount', 'Currency', 'Category', 'Merchant', 'Description', 'Reference', 'Tax', 'Notes'];
   const cell = v => {
-    const s = String(v ?? '');
+    let s = String(v ?? '');
+    // Spreadsheets treat a leading = + - @ as a formula. Prefix with an
+    // apostrophe so the text is shown as text, never run.
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const rows = records

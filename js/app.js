@@ -162,7 +162,16 @@ view.addEventListener('click', e => {
   }
 });
 
-const onSearch = debounce(v => { ui.filters.query = v; render({ keepScroll: true }); }, 220);
+const onSearch = debounce(v => {
+  ui.filters.query = v;
+  const wasFocused = document.activeElement?.id === 'q';
+  const caret = document.activeElement?.selectionStart ?? v.length;
+  render({ keepScroll: true });
+  if (wasFocused) {
+    const q = $('#q');
+    if (q) { q.focus({ preventScroll: true }); try { q.setSelectionRange(caret, caret); } catch { /* type=search on some engines */ } }
+  }
+}, 220);
 view.addEventListener('input', e => {
   if (e.target.id === 'q') onSearch(e.target.value);
 });
@@ -212,7 +221,7 @@ if ('launchQueue' in window) {
 // Ctrl/Cmd+V anywhere drops a copied receipt straight in. Ignored while the
 // user is typing into a field, and silent when the clipboard holds only text.
 document.addEventListener('paste', async e => {
-  if (e.target.closest('input, textarea, [contenteditable]')) return;
+  if (e.target?.closest?.('input, textarea, [contenteditable]')) return;
   const file = await fileFromPasteEvent(e);
   if (!file) return;
   e.preventDefault();
@@ -268,4 +277,10 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', refreshChr
   }
 
   collectSharedFile();
+
+  const params = new URLSearchParams(location.search);
+  if (params.get('action') === 'scan') {
+    history.replaceState({}, '', './');
+    setTimeout(() => openCaptureMenu({ onDone: afterChange, inputs }), 450);
+  }
 })();
