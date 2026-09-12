@@ -101,7 +101,7 @@ export function renderInsights({ period }) {
           </div>`).join('')}
       </div></div>` : ''}
 
-    <button class="btn btn-outline" id="btn-export" type="button" style="margin-top:20px">⬇︎ Export these records as CSV</button>
+    <button class="btn btn-outline" id="btn-export" type="button" style="margin-top:20px">⬇︎ Export ${rows.length} record${rows.length === 1 ? '' : 's'} as CSV</button>
   `;
 }
 

@@ -4,7 +4,7 @@ import { esc, h, $, $$, openSheet, toast, confirmSheet, haptic, fmtMoney } from 
 import {
   state, activeWorkspace, workspaceRecords, makeWorkspace, addWorkspace, saveWorkspaces,
   setActiveWorkspace, deleteWorkspace, saveSettings, categoriesFor, addCategory, removeCategory,
-  exportBackup, importBackup, estimateUsage,
+  exportBackup, importBackup, estimateUsage, receiptBytes,
 } from '../store.js';
 import { PRESETS, ACCENTS } from '../presets.js';
 import { toCSV, downloadBlob } from '../csv.js';
@@ -71,7 +71,7 @@ export function renderMore() {
       <button class="row" data-act="backup" type="button">
         <div class="row-icon">💾</div>
         <div class="row-body"><div class="row-title">Back up everything</div>
-          <div class="row-sub">Records only — receipt images export as a PDF above</div></div>
+          <div class="row-sub">${backupSubtitle()}</div></div>
       </button>
       <button class="row" data-act="restore" type="button">
         <div class="row-icon">📥</div>
@@ -101,6 +101,13 @@ export function renderMore() {
         <button data-order="dmy" aria-selected="${state.settings.dateOrder === 'dmy'}">Day first</button>
         <button data-order="mdy" aria-selected="${state.settings.dateOrder === 'mdy'}">Month first</button>
       </div>
+      <div class="switch-row">
+        <div class="switch-text"><b>Weeks start on</b><small>How the calendar lays out its columns</small></div>
+      </div>
+      <div class="segmented" id="weekstart-seg" style="margin-bottom:14px">
+        <button data-week="mon" aria-selected="${(state.settings.weekStart || 'mon') === 'mon'}">Monday</button>
+        <button data-week="sun" aria-selected="${state.settings.weekStart === 'sun'}">Sunday</button>
+      </div>
     </div>
 
     <div class="section-head"><span class="section-title">About</span></div>
@@ -112,6 +119,17 @@ export function renderMore() {
 
     <button class="btn btn-outline btn-sm" data-act="danger" type="button" style="margin-top:18px">Delete this workspace…</button>
   </div>`;
+}
+
+/** How long ago the last backup was, in words — or a nudge if there isn't one. */
+function backupSubtitle() {
+  const last = state.settings.lastBackupAt;
+  if (!last) return 'Never backed up — a copy you can restore anywhere';
+  const days = Math.floor((Date.now() - new Date(last)) / 86400000);
+  if (days <= 0) return 'Last backed up today';
+  if (days === 1) return 'Last backed up yesterday';
+  if (days < 30) return `Last backed up ${days} days ago`;
+  return `Last backed up ${new Date(last).toISOString().slice(0, 10)} — worth doing again`;
 }
 
 export function wireMore(container, { rerender, refreshChrome }) {
@@ -145,6 +163,14 @@ export function wireMore(container, { rerender, refreshChrome }) {
     rerender();
   });
 
+  $('#weekstart-seg', root)?.addEventListener('click', async e => {
+    const b = e.target.closest('[data-week]');
+    if (!b) return;
+    state.settings.weekStart = b.dataset.week;
+    await saveSettings();
+    rerender();
+  });
+
   root.addEventListener('click', async e => {
     const wsBtn = e.target.closest('[data-ws]');
     if (wsBtn) {
@@ -163,7 +189,7 @@ export function wireMore(container, { rerender, refreshChrome }) {
     if (act === 'categories') openCategorySheet({ onDone: rerender });
     if (act === 'receipts') openReceiptExport();
     if (act === 'export-csv') doExportCSV();
-    if (act === 'backup') doBackup();
+    if (act === 'backup') openBackupSheet({ onDone: rerender });
     if (act === 'restore') document.getElementById('restore-input').click();
     if (act === 'danger') {
       const ws = activeWorkspace();
@@ -450,11 +476,70 @@ function doExportCSV() {
   toast(`Exported ${rows.length} records`);
 }
 
-async function doBackup() {
-  const data = await exportBackup();
-  const name = `expense-tracker-backup-${new Date().toISOString().slice(0, 10)}.json`;
-  downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), name);
-  toast('Backup saved — receipt images stay on this device');
+/** Back up with or without the receipt images, with the size cost shown up front. */
+export function openBackupSheet({ onDone } = {}) {
+  let withImages = true;
+  const body = h('<div></div>');
+  const sheet = openSheet({ title: 'Back up everything', body });
+  let stats = null;
+
+  const draw = () => {
+    const size = stats
+      ? (stats.count
+        ? `${stats.count} image${stats.count === 1 ? '' : 's'} · about ${fmtSize(stats.bytes * 1.37)} larger`
+        : 'No receipt images saved yet')
+      : 'Measuring…';
+    body.innerHTML = `
+      <p class="sheet-text">One file holding every workspace, record and setting
+        on this device. Keep it in your email or cloud drive — restoring it
+        anywhere brings the lot back.</p>
+
+      <div class="card" style="margin-top:16px;padding:4px 14px">
+        <div class="switch-row">
+          <div class="switch-text"><b>Include receipt images</b><small>${esc(size)}</small></div>
+          <input type="checkbox" class="switch" id="b-images" ${withImages ? 'checked' : ''} ${stats?.count ? '' : 'disabled'} />
+        </div>
+      </div>
+
+      <div class="sheet-actions">
+        <button class="btn btn-ghost" id="b-cancel" type="button">Cancel</button>
+        <button class="btn btn-primary" id="b-go" type="button">Save backup</button>
+      </div>`;
+
+    $('#b-images', body).addEventListener('change', function () { withImages = this.checked; });
+    $('#b-cancel', body).addEventListener('click', sheet.close);
+    $('#b-go', body).addEventListener('click', async () => {
+      const btn = $('#b-go', body);
+      btn.disabled = true;
+      btn.textContent = 'Building…';
+      try {
+        const data = await exportBackup({ includeFiles: withImages && !!stats?.count });
+        const name = `expense-tracker-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        downloadBlob(new Blob([JSON.stringify(data)], { type: 'application/json' }), name);
+        state.settings.lastBackupAt = new Date().toISOString();
+        state.settings.backupNudgedAt = null;
+        await saveSettings();
+        sheet.close();
+        onDone?.();
+        const n = data.files?.length || 0;
+        toast(n ? `Backup saved with ${n} receipt${n === 1 ? '' : 's'}` : 'Backup saved');
+      } catch (err) {
+        console.error(err);
+        btn.disabled = false;
+        btn.textContent = 'Save backup';
+        toast('Could not build the backup', { tone: 'danger' });
+      }
+    });
+  };
+
+  draw();
+  receiptBytes().then(r => { stats = r; if (document.body.contains(body)) draw(); }).catch(() => {});
+}
+
+function fmtSize(bytes) {
+  const mb = bytes / 1048576;
+  if (mb >= 1) return `${mb.toFixed(mb >= 10 ? 0 : 1)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
 export async function doRestore(file, { onDone }) {
@@ -462,7 +547,10 @@ export async function doRestore(file, { onDone }) {
     const data = JSON.parse(await file.text());
     const added = await importBackup(data);
     onDone?.();
-    toast(added ? `Restored ${added} records` : 'Nothing new in that backup');
+    const images = Array.isArray(data.files) ? data.files.length : 0;
+    toast(added
+      ? `Restored ${added} records${images ? ` and ${images} receipts` : ''}`
+      : 'Nothing new in that backup');
   } catch (err) {
     toast(err.message || 'That file could not be read', { tone: 'danger' });
   }

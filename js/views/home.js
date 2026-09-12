@@ -1,10 +1,31 @@
 'use strict';
 
 import { esc, fmtMoney, fmtDate, relativeDays } from '../util.js';
-import { activeWorkspace, workspaceRecords, categoryIcon } from '../store.js';
+import { activeWorkspace, workspaceRecords, categoryIcon, state } from '../store.js';
 import {
   recordRow, emptyState, PERIODS, inPeriod, totals, byCategory, upcoming, periodLabel,
 } from './shared.js';
+
+/**
+ * Records live only in this browser, so a device that is lost takes them with
+ * it. Once there is enough in here to miss, say so — once, quietly, and not
+ * again for a few weeks if the user waves it off.
+ */
+function backupNudge(count) {
+  if (count < 15) return '';
+  const { lastBackupAt, backupNudgedAt } = state.settings;
+  const daysSince = iso => (iso ? (Date.now() - new Date(iso)) / 86400000 : Infinity);
+  if (daysSince(lastBackupAt) < 45) return '';
+  if (daysSince(backupNudgedAt) < 21) return '';
+  return `<div class="note warn nudge" style="margin-top:14px">
+    <b>${lastBackupAt ? 'Your last backup is a while ago' : 'Nothing is backed up yet'}</b>
+    <p>${count} records live only on this phone. A backup file takes a second and restores anywhere.</p>
+    <div class="nudge-actions">
+      <button class="btn btn-sm btn-primary" id="btn-backup-now" type="button">Back up now</button>
+      <button class="btn btn-sm btn-ghost" id="btn-backup-later" type="button">Not now</button>
+    </div>
+  </div>`;
+}
 
 export function renderHome({ period }) {
   const ws = activeWorkspace();
@@ -55,6 +76,8 @@ export function renderHome({ period }) {
         </div>
       </div>
     </section>
+
+    ${backupNudge(all.length)}
 
     ${due.length ? `
       <div class="section-head"><span class="section-title">Coming up</span></div>

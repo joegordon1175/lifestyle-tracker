@@ -96,6 +96,9 @@ export async function init() {
     autoSaveHighConfidence: false,
     cropReceipts: true,      // show the scanner-style crop step for photos
     scanCleanup: 'strong',   // clean-up level last chosen in the scan preview
+    weekStart: 'mon',        // calendar columns start on Monday (NZ/UK/EU) or Sunday
+    lastBackupAt: null,      // when a backup file was last saved
+    backupNudgedAt: null,    // when the "back up" reminder was last dismissed
     onboarded: false,
   }, meta.settings || {});
 
@@ -376,15 +379,20 @@ function bookFor(wsId) {
   return (state.payees[wsId] = []);
 }
 
+/**
+ * Learn from a saved record. Returns a function that puts the book back the
+ * way it was, so an undone save does not leave a lesson behind.
+ */
 export async function rememberPayee(wsId, { detected = '', merchant = '', category = '', text = '' } = {}) {
   const name = merchant.trim();
-  if (!name) return;
+  if (!name) return async () => {};
   const book = bookFor(wsId);
 
   const keys = [payeeKey(name), payeeKey(detected)].filter(k => k.length >= 3);
   const tokens = fingerprint(text);
 
   let entry = book.find(e => e.merchant.toLowerCase() === name.toLowerCase());
+  const before = entry ? JSON.parse(JSON.stringify(entry)) : null;
   if (!entry) {
     entry = { merchant: name, category, keys: [], tokens: [], count: 0 };
     book.push(entry);
@@ -401,6 +409,14 @@ export async function rememberPayee(wsId, { detected = '', merchant = '', catego
     book.length = PAYEE_LIMIT;
   }
   await put('meta', { key: 'payees', value: state.payees });
+
+  return async () => {
+    const live = bookFor(wsId);
+    const i = live.indexOf(entry);
+    if (before) { if (i >= 0) live[i] = before; else live.push(before); }
+    else if (i >= 0) live.splice(i, 1);
+    await put('meta', { key: 'payees', value: state.payees });
+  };
 }
 
 export function recallPayee(wsId, { detected = '', text = '' } = {}) {
@@ -453,16 +469,73 @@ export async function getFileURL(id) {
 }
 
 // ── Backup / restore ────────────────────────────────────────
-export async function exportBackup() {
-  return {
+function blobToDataURL(blob) {
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => res(fr.result);
+    fr.onerror = () => rej(fr.error);
+    fr.readAsDataURL(blob);
+  });
+}
+function dataURLToBlob(url) {
+  const m = /^data:([^;,]*)(;base64)?,(.*)$/s.exec(url || '');
+  if (!m) return null;
+  const type = m[1] || 'application/octet-stream';
+  if (!m[2]) return new Blob([decodeURIComponent(m[3])], { type });
+  const bin = atob(m[3]);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type });
+}
+
+/**
+ * Everything on the device as one JSON file. With `includeFiles` the receipt
+ * images ride along too (base64, so roughly a third bigger than on disk);
+ * without it the records keep no file references, so a restore is clean.
+ */
+export async function exportBackup({ includeFiles = false } = {}) {
+  const out = {
     app: 'snap-expense-tracker',
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     workspaces: state.workspaces,
     settings: state.settings,
     payees: state.payees,
-    records: state.records.map(({ fileIds, fileId, ...r }) => r), // images export separately as a receipt pack
+    records: state.records.map(({ fileIds, fileId, ...r }) => r),
   };
+  if (!includeFiles) return out;
+
+  const files = [];
+  const kept = [];
+  for (const r of state.records) {
+    const ids = [];
+    for (const id of recordFileIds(r)) {
+      try {
+        const f = await getFile(id);
+        if (!f?.blob) continue;
+        files.push({ id, name: f.name || 'receipt', type: f.blob.type || 'image/jpeg', data: await blobToDataURL(f.blob) });
+        ids.push(id);
+      } catch { /* a missing image is not worth failing the whole backup */ }
+    }
+    const rest = { ...r };
+    delete rest.fileId;                  // legacy single-image shape
+    kept.push({ ...rest, fileIds: ids });
+  }
+  out.records = kept;
+  out.files = files;
+  return out;
+}
+
+/** Size of the images a full backup would carry, so the choice can be shown honestly. */
+export async function receiptBytes() {
+  let bytes = 0, count = 0;
+  for (const r of state.records) {
+    for (const id of recordFileIds(r)) {
+      const f = await getFile(id).catch(() => null);
+      if (f?.blob) { bytes += f.blob.size; count++; }
+    }
+  }
+  return { bytes, count };
 }
 
 export async function importBackup(data, { replace = false } = {}) {
@@ -499,10 +572,23 @@ export async function importBackup(data, { replace = false } = {}) {
   }
   await saveWorkspaces();
 
+  // Receipt images, when the backup carries them. Stored under fresh ids so a
+  // restore can never clash with an image already on this device.
+  const fileMap = new Map();
+  if (Array.isArray(data.files)) {
+    for (const f of data.files) {
+      const blob = f?.id && dataURLToBlob(f.data);
+      if (!blob || !blob.size) continue;
+      try { fileMap.set(f.id, await saveFile(blob, f.name || 'receipt')); }
+      catch { /* out of room: the record still comes across, just without its image */ }
+    }
+  }
+
   let added = 0;
   for (const r of data.records) {
     if (state.records.some(x => x.id === r.id)) continue;
-    const rec = normaliseRecord({ ...r, ws: idMap.get(r.ws) || state.workspaces[0].id, fileIds: [] });
+    const fileIds = recordFileIds(r).map(id => fileMap.get(id)).filter(Boolean);
+    const rec = normaliseRecord({ ...r, ws: idMap.get(r.ws) || state.workspaces[0].id, fileIds });
     state.records.push(rec);
     await put('records', rec);
     added++;

@@ -23,6 +23,7 @@ export function openEditor({
   learned = {},
   detectedMerchant = '',
   scanText = '',
+  notice = null,
   title,
   onDone,
 } = {}) {
@@ -64,6 +65,8 @@ export function openEditor({
 
   const body = h(`<form class="editor" novalidate>
     <div class="photo-slot"></div>
+
+    ${notice ? `<div class="note warn editor-notice">${esc(notice)}</div>` : ''}
 
     <div class="field">
       <div class="type-toggle">
@@ -306,7 +309,7 @@ export function openEditor({
 
     // Learn what this supplier is called, so the next scan of the same
     // letterhead arrives already filled in the way the user wants it.
-    await rememberPayee(ws.id, {
+    const forgetPayee = await rememberPayee(ws.id, {
       detected: detectedMerchant,
       merchant: rec.merchant,
       category: rec.category,
@@ -320,7 +323,12 @@ export function openEditor({
     if (!isEdit) {
       toast(`${rec.type === 'income' ? 'Added' : 'Recorded'} ${fmtMoney(rec.amount, rec.currency)} · ${rec.category}`, {
         action: 'Undo',
-        onAction: async () => { await deleteRecord(rec.id); onDone?.(null); toast('Removed'); },
+        onAction: async () => {
+          await deleteRecord(rec.id);
+          await forgetPayee?.();          // undo the lesson too, not just the record
+          onDone?.(null);
+          toast('Removed');
+        },
       });
     } else {
       toast('Changes saved');

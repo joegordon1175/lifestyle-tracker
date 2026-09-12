@@ -1,11 +1,14 @@
 'use strict';
 
 import { esc, fmtMoney, fmtDate, pad, today } from '../util.js';
-import { activeWorkspace, workspaceRecords } from '../store.js';
+import { activeWorkspace, workspaceRecords, state } from '../store.js';
 import { groupedRecords, emptyState, recordRow, totals } from './shared.js';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** Rows drawn before the list asks to be extended; keeps a big history snappy. */
+export const PAGE = 60;
 
 export function filterRecords(records, { query, type, category }) {
   const q = (query || '').trim().toLowerCase();
@@ -25,6 +28,7 @@ export function renderRecords(filters) {
   const ws = activeWorkspace();
   const all = workspaceRecords();
   const matches = filterRecords(all, filters);
+  const shown = Math.max(PAGE, filters.shown || 0);
   const usedCats = [...new Set(all.map(r => r.category))].sort();
   const sums = totals(matches);
 
@@ -62,7 +66,11 @@ export function renderRecords(filters) {
           <span>${matches.length} record${matches.length === 1 ? '' : 's'}</span>
           <span class="day-total">${esc(fmtMoney(sums.net, ws.currency, { sign: true }))}</span>
         </div>
-        ${groupedRecords(matches, ws)}
+        ${groupedRecords(matches.slice(0, shown), ws)}
+        ${matches.length > shown ? `
+          <button class="btn btn-outline" id="btn-more" type="button" style="margin-top:14px">
+            Show ${Math.min(PAGE * 2, matches.length - shown)} more · ${matches.length - shown} older
+          </button>` : ''}
       ` : emptyState({ icon: '🔍', title: 'Nothing matches', text: 'Try a different search or clear the filters.' })}
     `}
   `;
@@ -71,7 +79,10 @@ export function renderRecords(filters) {
 function renderCalendar(all, filters, ws) {
   const [cy, cm] = (filters.calMonth || today().slice(0, 7)).split('-').map(Number);
   const monthIso = `${cy}-${pad(cm)}`;
-  const firstDow = new Date(cy, cm - 1, 1).getDay();
+  const mondayFirst = (state.settings.weekStart || 'mon') !== 'sun';
+  // Column of the 1st: getDay() counts from Sunday, so shift when Monday leads.
+  const firstDow = (new Date(cy, cm - 1, 1).getDay() + (mondayFirst ? 6 : 0)) % 7;
+  const dows = mondayFirst ? ['M', 'T', 'W', 'T', 'F', 'S', 'S'] : ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
   const daysInMonth = new Date(cy, cm, 0).getDate();
   const prevDays = new Date(cy, cm - 1, 0).getDate();
   const t = today();
@@ -122,7 +133,7 @@ function renderCalendar(all, filters, ws) {
 
     <div class="card" style="padding:12px">
       <div class="cal-grid">
-        ${['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(d => `<div class="cal-dow">${d}</div>`).join('')}
+        ${dows.map(d => `<div class="cal-dow">${d}</div>`).join('')}
         ${cells.join('')}
       </div>
     </div>

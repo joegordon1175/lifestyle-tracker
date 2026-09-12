@@ -7,13 +7,14 @@ import { parseCSV, detectColumns, rowsToRecords } from '../csv.js';
 import { openEditor } from './form.js';
 import { pasteReceipt } from '../clipboard.js';
 import { openCropper } from './cropper.js';
+import { loadImage, toCanvas, detectDocument } from '../scan.js';
 
 /**
  * The whole point of the app: hand it a file, get a record.
  * Images and PDFs go through OCR/parsing; CSVs go through the statement
  * importer. Either way the user only confirms — they never type from scratch.
  */
-export async function handleFile(file, { onDone, skipCrop = false } = {}) {
+export async function handleFile(file, { onDone, skipCrop = false, fromCamera = false } = {}) {
   if (!file) return;
 
   const isCSV = /\.csv$/i.test(file.name || '') || file.type === 'text/csv' || file.type === 'application/vnd.ms-excel';
@@ -30,7 +31,7 @@ export async function handleFile(file, { onDone, skipCrop = false } = {}) {
   // Photos go through the crop step first: a flat, cropped receipt both looks
   // like a scan and reads far better. PDFs are already flat, so they skip it.
   const isImage = file.type.startsWith('image/') || /\.(jpe?g|png|heic|heif|webp)$/i.test(file.name || '');
-  if (isImage && state.settings.cropReceipts && !skipCrop) {
+  if (isImage && !skipCrop && await wantsCrop(file, fromCamera)) {
     openCropper({
       file,
       onDone: cropped => handleFile(cropped, { onDone, skipCrop: true }),
@@ -78,14 +79,14 @@ export async function handleFile(file, { onDone, skipCrop = false } = {}) {
       fileType: result.fileType,
       confidence: result.confidence,
       title: result.amount ? 'Check and save' : 'Almost there',
+      // Said inside the sheet rather than in a toast: the warning is about what
+      // is on screen, and it must not slide away before the user has read it —
+      // nor replace the Undo offered the moment the record is saved.
+      notice: duplicate
+        ? `You already have ${fmtMoney(duplicate.amount, duplicate.currency)} from ${duplicate.merchant || 'this shop'} on the same day. Save it again only if there really were two.`
+        : (result.amount ? null : 'The total could not be read off this one — type it in below.'),
       onDone,
     });
-
-    if (duplicate) {
-      setTimeout(() => toast('Looks like you already saved this one', { duration: 6000 }), 500);
-    } else if (!result.amount) {
-      setTimeout(() => toast('Could not read a total — pop it in yourself', { duration: 5000 }), 400);
-    }
   } catch (err) {
     progress.close();
     console.error(err);
@@ -106,6 +107,26 @@ export async function handleFile(file, { onDone, skipCrop = false } = {}) {
       ? 'Reading receipts needs a connection the first time. Photo attached — fill in the rest.'
       : 'Could not read that one. Photo attached — fill in the rest.',
     { duration: 6000 });
+  }
+}
+
+/**
+ * Whether this image is worth a crop step. A camera photo always is — it was
+ * just taken at an angle. An image that arrived by paste, share or drag is
+ * usually already a flat scan or an emailed attachment, so it only gets the
+ * crop step when there really is a document sitting inside a larger frame.
+ */
+async function wantsCrop(file, fromCamera) {
+  if (!state.settings.cropReceipts) return false;
+  if (fromCamera) return true;
+  try {
+    const bitmap = await loadImage(file);
+    const canvas = toCanvas(bitmap);
+    bitmap.close?.();
+    const { confidence } = detectDocument(canvas);
+    return confidence >= 0.5;
+  } catch {
+    return false;                        // unreadable here; let OCR have a go
   }
 }
 

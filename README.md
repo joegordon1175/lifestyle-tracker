@@ -75,10 +75,12 @@ not line up. Names already used are offered as you type.
   summary index that cross-references page numbers. Pick a period (month, quarter,
   year or everything) and it becomes the thing you hand to an accountant. Any
   single record can also be saved on its own from its detail sheet.
-- **CSV export** of a workspace, for a spreadsheet.
-- **JSON backup** of every workspace. This carries the records only — receipt
-  images come out through the PDF export above, which keeps the backup small
-  enough to email.
+- **CSV export** of the period showing on Insights, for a spreadsheet. The button
+  says how many records it will write.
+- **JSON backup** of every workspace, record and setting. Receipt images can ride
+  along or be left out — the sheet shows what they add before you choose, so a
+  backup is either a complete restore or a small file you can email. Restoring
+  brings the images back with their records.
 
 Receipts are stored as JPEG rather than PDF: it is roughly half the size for the
 same page, and the PDF is generated on demand so it can carry the transaction
@@ -89,9 +91,12 @@ lossless and works offline.
 ## What is in the box
 
 - Home: net position for the period, what is coming up, where the money went, recent records.
-- Records: search, type and category filters, plus a month calendar view.
+- Records: search, type and category filters, plus a month calendar view. Long
+  histories draw a page at a time so the list stays quick to open.
 - Insights: six-month trend, full category breakdown, most-spent-with, CSV export.
 - Dark mode, and an accent colour that follows the active workspace.
+- Weeks start on Monday, switchable to Sunday.
+- A quiet reminder to back up once there is enough in there to miss.
 - Installable as a home-screen app; works offline once installed.
 
 ## Privacy

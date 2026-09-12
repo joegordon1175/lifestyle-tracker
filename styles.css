@@ -594,8 +594,8 @@ textarea.input { min-height: 76px; resize: vertical; line-height: 1.45; }
 }
 .tab-icon { font-size: 1.18rem; line-height: 1; filter: grayscale(1); opacity: .7; transition: all .18s var(--ease); }
 .tab-label { font-size: .64rem; font-weight: 700; letter-spacing: .01em; }
-.tab[aria-selected="true"] { color: var(--accent-text); }
-.tab[aria-selected="true"] .tab-icon { filter: none; opacity: 1; transform: translateY(-1px) scale(1.06); }
+.tab[aria-current="page"] { color: var(--accent-text); }
+.tab[aria-current="page"] .tab-icon { filter: none; opacity: 1; transform: translateY(-1px) scale(1.06); }
 
 .tab-fab-slot { position: relative; height: 100%; }
 .fab {
@@ -741,6 +741,11 @@ textarea.input { min-height: 76px; resize: vertical; line-height: 1.45; }
   border-radius: 12px; padding: 11px 13px; margin-top: 12px;
 }
 .note.warn { background: var(--warn-soft); border-color: transparent; color: var(--warn); }
+.editor-notice { margin: 0 0 16px; }
+.nudge b { display: block; font-size: .88rem; margin-bottom: 3px; }
+.nudge p { margin: 0; font-size: .8rem; line-height: 1.45; }
+.nudge-actions { display: flex; gap: 8px; margin-top: 10px; }
+.nudge-actions .btn { flex: 1 1 0; width: auto; min-width: 0; }
 
 /* ── Toast ───────────────────────────────────────────────── */
 .toast-host {

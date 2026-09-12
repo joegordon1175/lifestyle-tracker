@@ -3,19 +3,19 @@
 import { $, $$, debounce, haptic, toast, today } from './util.js';
 import { init, state, activeWorkspace, saveSettings } from './store.js';
 import { renderHome } from './views/home.js';
-import { renderRecords } from './views/records.js';
+import { renderRecords, PAGE } from './views/records.js';
 import { renderInsights } from './views/insights.js';
-import { renderMore, wireMore, openWorkspaceSheet, openWorkspaceSwitcher, doRestore } from './views/more.js';
+import { renderMore, wireMore, openWorkspaceSheet, openWorkspaceSwitcher, doRestore, openBackupSheet } from './views/more.js';
 import { openDetail } from './views/form.js';
 import { handleFile, openCaptureMenu } from './views/capture.js';
 import { fileFromPasteEvent, pasteReceipt } from './clipboard.js';
-import { periodLabel } from './views/shared.js';
+import { periodLabel, inPeriod } from './views/shared.js';
 import { toCSV, downloadBlob } from './csv.js';
 
 const ui = {
   tab: 'home',
   period: 'month',
-  filters: { query: '', type: '', category: '', mode: 'list', calMonth: today().slice(0, 7), calDay: null },
+  filters: { query: '', type: '', category: '', mode: 'list', shown: PAGE, calMonth: today().slice(0, 7), calDay: null },
 };
 
 const view = $('#view');
@@ -43,7 +43,10 @@ function refreshChrome() {
   const dark = theme === 'dark' || (theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
   $('meta[name="theme-color"]').setAttribute('content', dark ? '#0b0f17' : ws.accent);
 
-  $$('.tab').forEach(t => t.setAttribute('aria-selected', String(t.dataset.tab === ui.tab)));
+  $$('.tab').forEach(t => {
+    if (t.dataset.tab === ui.tab) t.setAttribute('aria-current', 'page');
+    else t.removeAttribute('aria-current');
+  });
 }
 
 // ── Rendering ───────────────────────────────────────────────
@@ -113,12 +116,19 @@ view.addEventListener('click', e => {
   const mode = t.closest('[data-mode]')?.dataset.mode;
   if (mode) { ui.filters.mode = mode; haptic(); render({ keepScroll: true }); return; }
 
-  if (t.closest('#q-clear')) { ui.filters.query = ''; render({ keepScroll: true }); return; }
+  if (t.closest('#q-clear')) { ui.filters.query = ''; ui.filters.shown = PAGE; render({ keepScroll: true }); return; }
+
+  if (t.closest('#btn-more')) {
+    ui.filters.shown = (ui.filters.shown || PAGE) + PAGE * 2;
+    render({ keepScroll: true });
+    return;
+  }
 
   const typeChip = t.closest('[data-type]');
   if (typeChip) {
     ui.filters.type = typeChip.dataset.type;
     ui.filters.category = '';
+    ui.filters.shown = PAGE;
     haptic();
     render({ keepScroll: true });
     return;
@@ -127,7 +137,16 @@ view.addEventListener('click', e => {
   const catChip = t.closest('[data-cat]');
   if (catChip) {
     ui.filters.category = ui.filters.category === catChip.dataset.cat ? '' : catChip.dataset.cat;
+    ui.filters.shown = PAGE;
     haptic();
+    render({ keepScroll: true });
+    return;
+  }
+
+  if (t.closest('#btn-backup-now')) { openBackupSheet({ onDone: afterChange }); return; }
+  if (t.closest('#btn-backup-later')) {
+    state.settings.backupNudgedAt = new Date().toISOString();
+    saveSettings();
     render({ keepScroll: true });
     return;
   }
@@ -151,12 +170,15 @@ view.addEventListener('click', e => {
   }
 
   if (t.closest('#btn-export')) {
-    const rows = state.records.filter(r => r.ws === state.settings.activeWs);
-    if (!rows.length) { toast('Nothing to export yet'); return; }
+    // The button sits under a period's figures, so it exports that period.
+    const all = state.records.filter(r => r.ws === state.settings.activeWs);
+    const rows = inPeriod(all, ui.period);
+    if (!rows.length) { toast('Nothing to export in this period'); return; }
     const ws = activeWorkspace();
+    const slug = ws.name.replace(/[^\w-]+/g, '-').toLowerCase();
     downloadBlob(
       new Blob([toCSV(rows)], { type: 'text/csv;charset=utf-8' }),
-      `${ws.name.replace(/[^\w-]+/g, '-').toLowerCase()}-${today()}.csv`,
+      `${slug}-${ui.period}-${today()}.csv`,
     );
     toast(`Exported ${rows.length} records`);
   }
@@ -164,6 +186,7 @@ view.addEventListener('click', e => {
 
 const onSearch = debounce(v => {
   ui.filters.query = v;
+  ui.filters.shown = PAGE;
   const wasFocused = document.activeElement?.id === 'q';
   const caret = document.activeElement?.selectionStart ?? v.length;
   render({ keepScroll: true });
@@ -181,7 +204,7 @@ for (const el of [inputs.file, inputs.camera]) {
   el.addEventListener('change', function () {
     const file = this.files?.[0];
     this.value = '';                       // let the same file be picked twice
-    if (file) handleFile(file, { onDone: afterChange });
+    if (file) handleFile(file, { onDone: afterChange, fromCamera: el === inputs.camera });
   });
 }
 inputs.restore.addEventListener('change', function () {
